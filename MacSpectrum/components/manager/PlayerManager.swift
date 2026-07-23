@@ -14,6 +14,14 @@ import CoreAudio
 
 class PlayerManager: ObservableObject {
     
+    let songsURL: URL
+    let lyricsURL: URL
+    
+    // 顺便把 albums 也动态化了
+    var albumsURL: URL {
+        songsURL.deletingLastPathComponent().appendingPathComponent("albums", isDirectory: true)
+    }
+    
     // ── 🎛️ 任务栏状态菜单控制中枢 ──────────────────────────────────
     @Published var karaoke: Bool = false
     @Published var isAutopilotMode: Bool = false
@@ -46,13 +54,16 @@ class PlayerManager: ObservableObject {
     
     private var playToken = 0
     
-    private let albumsPath = "/Users/guopeng/Documents/spectrumplayer/albums"
+//    private let albumsPath = "/Users/guopeng/Documents/spectrumplayer/albums"
+    
+//    var albumsPath: String
+    
     @Published var albumImages: [NSImage] = []
     
     // 存储总时长，load 文件时赋值
     private(set) var totalDuration: Double = 0
     
-    // 🚀 【核心补强 1】：专门提供给前台歌词（onChange）和外部状态高频响应的 `@Published` 灵魂变量
+    // 专门提供给前台歌词（onChange）和外部状态高频响应的 `@Published` 灵魂变量
     @Published var currentTime: Double = 0
     
     // 💾 用于在暂停时，死死锁住当前的播放进度，防止 lastRenderTime 变 nil 导致归零
@@ -76,8 +87,6 @@ class PlayerManager: ObservableObject {
         progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
-            // 🎯 【铁律解药】：只要在播放状态，每 0.1 秒就雷打不动地给我们的时间线加 0.1 秒！
-            // 这样就彻底抛弃了底层歪曲的 nodeTime，哪怕暂停一年，回来也得从断点老老实实往前挪！
             if self.isPlaying {
                 let nextTime = self.currentTime + 0.1
                 
@@ -96,7 +105,10 @@ class PlayerManager: ObservableObject {
         progressTimer = nil
     }
     
-    init() {
+    init(songsURL: URL, lyricsURL: URL) {
+        
+        self.songsURL = songsURL
+        self.lyricsURL = lyricsURL
         
         setupAudioGraph()
         
@@ -117,18 +129,12 @@ class PlayerManager: ObservableObject {
         // 初始化时先自动对齐一次延迟
         updateDynamicDelay()
         
-        //开启反向控制雷达，接管系统和 BoringNotch 的小动作
-//        setupRemoteCommandCenter()
-        
         setupGlobalRemoteCommandCenter()
-        
     }
     
     // 🚀 【核心修复：多媒体总线无条件强占机制】
     func setupGlobalRemoteCommandCenter() {
         let commandCenter = MPRemoteCommandCenter.shared()
-        
-        // 老爷子注意：这里面必须无条件返回 .success！这样系统才会死心塌地把 F7/F8/F9 和 BoringNotch 信号全喂给我们！
         
         // 1. 强控【播放】
         commandCenter.playCommand.isEnabled = true
@@ -203,7 +209,7 @@ class PlayerManager: ObservableObject {
             return .success
         }
         
-        print("🎛️ [iSpectrum 终极控制链] 系统总线、物理多媒体键、BoringNotch 全线大对齐！")
+        print("🎛️ [macSpectrum 终极控制链] 系统总线、物理多媒体键、BoringNotch 全线大对齐！")
     }
     
     // 🚀 【铁腕状态同步】：确保每次引擎状态改变，瞬间打醒 BoringNotch
@@ -214,91 +220,6 @@ class PlayerManager: ObservableObject {
         // 联动触发您原有的元数据刷新
         updateNowPlayingInfo()
     }
-    
-//    private func setupRemoteCommandCenter() {
-//        let commandCenter = MPRemoteCommandCenter.shared()
-        
-        // -----------------------------------------------------------
-        // 🎯 解决问题 2：让 macOS 控制中心和小岛的“播放/暂停”按钮彻底活过来
-        // -----------------------------------------------------------
-        
-//        commandCenter.togglePlayPauseCommand.isEnabled = true
-//        commandCenter.togglePlayPauseCommand.addTarget { [weak self] event in
-//            guard let self = self else { return .commandFailed }
-//            
-//            // 🎯 根本不需要系统去猜！我的播放器现在放没放歌，我自己最清楚！
-//            if self.isPlaying {
-//                print("🎧 AirPods 捏了一下 -> 判定当前正在放歌 -> 执行暂停")
-//                self.pause()
-//            } else {
-//                print("🎧 AirPods 捏了一下 -> 判定当前是暂停 -> 执行恢复")
-//                self.resume()
-//            }
-//            self.updateNowPlayingInfo()
-//            return .success
-//        }
-        
-        // 1. 响应播放命令
-//        commandCenter.playCommand.isEnabled = true
-//        commandCenter.playCommand.addTarget { [weak self] event in
-//            guard let self = self else { return .commandFailed }
-//            print("🎛️ 收到系统远程命令：【播放】")
-//            self.resume() // 👈 调用您自己的恢复播放方法
-//            self.updateNowPlayingInfo() // 记得刷新一次状态给系统
-//            return .success
-//        }
-        
-        // 2. 响应暂停命令
-//        commandCenter.pauseCommand.isEnabled = true
-//        commandCenter.pauseCommand.addTarget { [weak self] event in
-//            guard let self = self else { return .commandFailed }
-//            print("🎛️ 收到系统远程命令：【暂停】")
-//            self.pause() // 👈 调用您自己的暂停方法
-//            self.updateNowPlayingInfo() // 刷新一次状态给系统
-//            return .success
-//        }
-        
-        // 3. 顺便把切歌命令也焊上，这样控制中心切歌也能用了！
-//        commandCenter.nextTrackCommand.isEnabled = true
-//        commandCenter.nextTrackCommand.addTarget { [weak self] event in
-//            self?.nextTrack()
-//            self?.updateNowPlayingInfo() // 刷新一次状态给系统
-//            return .success
-//        }
-//        
-//        commandCenter.previousTrackCommand.isEnabled = true
-//        commandCenter.previousTrackCommand.addTarget { [weak self] event in
-//            self?.previousTrack()
-//            self?.updateNowPlayingInfo() // 刷新一次状态给系统
-//            return .success
-//        }
-//        
-//        // -----------------------------------------------------------
-//        // 🎯 解决问题 1：打破不能拖动的僵局！支持 BoringNotch 进度条乱点乱拖
-//        // -----------------------------------------------------------
-//        commandCenter.changePlaybackPositionCommand.isEnabled = true
-//        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
-//            guard let self = self,
-//                  let positionEvent = event as? MPChangePlaybackPositionCommandEvent else {
-//                return .commandFailed
-//            }
-//            
-//            // positionEvent.positionTime 就是用户在 BoringNotch 里乱点或者乱拖出来的目标秒数（Double）
-//            let targetTime = positionEvent.positionTime
-//            print("🎛️ 收到系统远程命令：【进度条拖拽至 \(targetTime) 秒】")
-//            
-//            // 🚀 这里调用您播放器底层的 Seek（跳转时间）方法！
-//            // 假设您的核心跳转方法叫 seek(to: targetTime)，请在这里对齐它：
-//            self.seek(to: targetTime)
-//            
-//            // 🎯 【极度关键】：拖拽完后，必须立刻手动同步更新当前时间给系统，
-//            // 否则系统进度条会因为没有收到确认信号而像弹簧一样无情地弹回原处！
-//            self.currentTime = targetTime
-//            self.updateNowPlayingInfo()
-//            
-//            return .success
-//        }
-//    }
     
     // 🚀 【核心跳转算法】：让歌曲瞬间瞬移到指定的秒数
     func seek(to time: Double) {
@@ -360,7 +281,6 @@ class PlayerManager: ObservableObject {
         // 把传过来的指针，安全地重新还原成咱们的 PlayerManager 实例
         let playerManager = Unmanaged<PlayerManager>.fromOpaque(clientData).takeUnretainedValue()
         
-        // 🎯 无论戴上还是摘下耳机，系统硬件变动后，绝对会铁面无私地触发这里！
 //        print("📢 CoreAudio 探测到 Mac 全局音频设备发生物理切换！")
         
         // 回到主线程，让引擎重新绑定并动态刷新时间
@@ -617,7 +537,7 @@ class PlayerManager: ObservableObject {
         let songName = parts[1].trimmingCharacters(in: .whitespaces)
         
         let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(atPath: albumsPath) else { return [] }
+        guard let files = try? fm.contentsOfDirectory(atPath: albumsURL.path) else { return [] }
         
         let artistFiles = files.filter {
             $0.lowercased().hasPrefix(artist.lowercased()) &&
@@ -639,13 +559,13 @@ class PlayerManager: ObservableObject {
                 .replacingOccurrences(of: " ", with: "")
             //如果能唯一确定，则专辑数组只返回一张
             if(albumName.lowercased().contains(album)) {
-                if let image = NSImage(contentsOfFile: albumsPath + "/" + file) {
+                if let image = NSImage(contentsOfFile: albumsURL.path + "/" + file) {
                     return [image]
                 }
                 //如果歌词文件不存在，但是选定的歌曲名中就是专辑名则专辑数组也只返回对应的一张
             } else if songName.replacingOccurrences(of: " ", with: "")
                 .lowercased().contains(albumName.lowercased()) {
-                if let image = NSImage(contentsOfFile: albumsPath + "/" + file) {
+                if let image = NSImage(contentsOfFile: albumsURL.path + "/" + file) {
                     return [image]
                 }
             }
@@ -653,7 +573,7 @@ class PlayerManager: ObservableObject {
         
         //匹配失败，返回该歌手全部专辑图
         return artistFiles.compactMap {
-            NSImage(contentsOfFile: albumsPath + "/" + $0)
+            NSImage(contentsOfFile: albumsURL.path + "/" + $0)
         }
     }
 }

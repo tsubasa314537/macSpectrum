@@ -66,23 +66,7 @@ struct SpectrumAnalyser: View {
             let heightRange = maxHeight - minHeight
             let ratio = heightRange > 0 ? (height - minHeight) / heightRange : 0.0
             
-            // 🎯 线性映射：将占比 (0.0~1.0) 完美映射到模糊度区间 (3.0 ~ 7.0)
-            // 越矮越接近 3.0 (清晰)，越高越接近 7.0 (高能模糊)
-            //        let blurRadius = 3.0 + (Double(ratio) * (7.0 - 3.0))
-            
-            let blurRadius =
-            themeType == "black" ?
-            
-            //尚可(对86度角)
-            6.0 + (Double(ratio) * (-4.0))
-            
-            //OK(3,7)(对85度角)
-            //        7.0 + (Double(ratio) * (-4.0))
-            
-            :
-            
-            3.0 + (Double(ratio) * (-2.0))
-            
+            let blurRadius = 5.0 + (Double(ratio) * (-3.5))
             
             SmoothPentagon()
                 .fill(baseColor)
@@ -100,7 +84,7 @@ struct SpectrumAnalyser: View {
                     value: value
                 )
         } else {
-            QQCompositeEnergyBar(
+            CompositeEnergyBar(
                 height: height,
                 intensity: intensity,
                 barWidth: barWidthWhite,
@@ -112,7 +96,6 @@ struct SpectrumAnalyser: View {
         
 
     }
-    
     
     struct SmoothPentagon: Shape {
         // 尖角底部的夹角（默认 75 度）

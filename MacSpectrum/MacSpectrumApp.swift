@@ -10,8 +10,28 @@ import SwiftUI
 @main
 struct MacSpectrumApp: App {
     // 🚀 全局唯一的指挥官单例
-    @StateObject private var player = PlayerManager()
+    @StateObject private var player: PlayerManager
     @StateObject private var palette = PaletteManager()
+    
+    let songsURL: URL
+    let lyricsURL: URL
+    
+    init() {
+        let fileManager = FileManager.default
+        let docURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
+        
+        // 动态构建通用路径：~/Documents/spectrumplayer/songs & lyrics
+        let baseFolder = docURL.appendingPathComponent("spectrumplayer", isDirectory: true)
+        
+        let songsDir   = baseFolder.appendingPathComponent("songs", isDirectory: true)
+        let lyricsDir  = baseFolder.appendingPathComponent("lyrics", isDirectory: true)
+        
+        self.songsURL = songsDir
+        self.lyricsURL = lyricsDir
+        
+        // 初始化 PlayerManager，把准备好的路径喂给它
+        self._player = StateObject(wrappedValue: PlayerManager(songsURL: songsDir, lyricsURL: lyricsDir))
+    }
     
     var body: some Scene {
         WindowGroup {

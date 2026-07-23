@@ -10,18 +10,19 @@ import AppKit
 
 struct MainPlayerView: View {
     
-    // 🚀 彻底改为 @ObservedObject 接收主入口传入的唯一真实实例，绝不多开实例！
     @ObservedObject var player: PlayerManager
+    @ObservedObject var palette: PaletteManager
+    
     @StateObject private var lyricManager = LyricManager()
     
     @State private var playlists: [Playlist] = []
     @State private var selectedPlaylist: Playlist?
-    @ObservedObject var palette: PaletteManager
-//    @State private var remoteHandler = MediaRemoteHandler()
+
+    // 1. 获取当前系统登录用户的 Documents 目录真实路径
+    let documentURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     
-    let rootPath = "/Users/guopeng/Documents/spectrumplayer/songs"
-    let lrcPath = "/Users/guopeng/Documents/spectrumplayer/lyrics"
-    
+    // 2. 动态拼接后面的专属文件夹，并转为 String 路径
+ 
     var body: some View {
         // 🚀 用一个大外壳包裹，确保生命周期（.onAppear）在全软件运行期间只加载一次，永不被摧毁
         ZStack {
@@ -104,12 +105,8 @@ struct MainPlayerView: View {
                 window.standardWindowButton(.zoomButton)?.isHidden = true
             }
             
-//            remoteHandler.onPrevious  = { player.previousTrack() }
-//            remoteHandler.onPlayPause = { player.isPlaying ? player.pause() : player.resume() }
-//            remoteHandler.onNext      = { player.nextTrack() }
-            
-            let lrcDic = PlaylistLoader.loadLyrics(from: lrcPath)
-            playlists = PlaylistLoader.load(from: rootPath, in: lrcDic)
+            let lrcDic = PlaylistLoader.loadLyrics(from: player.lyricsURL.path)
+            playlists = PlaylistLoader.load(from: player.songsURL.path, in: lrcDic)
             if let first = playlists.first {
                 selectedPlaylist = first
                 player.loadPlaylist(songs: first.songs)
@@ -197,7 +194,7 @@ struct MainPlayerView: View {
                             if let img = player.nowAlbum {
                                 Image(nsImage: img)
                                     .resizable()
-                                    .blur(radius: 40, opaque: true)
+                                    .blur(radius: 30, opaque: true)
                                     .opacity(0.2)
                                     .scaledToFill()
                             }
