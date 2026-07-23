@@ -11,12 +11,9 @@ import SwiftUI
 struct MacSpectrumApp: App {
     // 🚀 全局唯一的指挥官单例
     @StateObject private var player: PlayerManager
-<<<<<<< HEAD
-=======
-    
+
     @StateObject private var lyric: LyricManager
     
->>>>>>> modi
     @StateObject private var palette = PaletteManager()
     
     let songsURL: URL
