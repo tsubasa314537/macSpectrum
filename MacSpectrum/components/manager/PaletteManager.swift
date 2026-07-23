@@ -1,18 +1,8 @@
 //
-//  PaletteManager.swift
-//  MacSpectrum
+// PaletteManager.swift
+// MacSpectrum
 //
-//  Created by 郭鹏 on 2026/6/2.
-//
-
-import SwiftUI
-import Combine
-// MARK: - 主题管理器
-//
-//  PaletteManager.swift
-//  MacSpectrum
-//
-//  Created by 郭鹏 on 2026/6/2.
+// Created by 郭鹏 on 2026/6/2.
 //
 
 import SwiftUI
@@ -65,7 +55,7 @@ class PaletteManager: ObservableObject {
         // 1. 进模式的一瞬间，立刻先盲摇一套双色，别让老爷子等
         self.triggerRandomAutopilotBlend()
         
-        // 2. 🕰️ 每 6 秒雷打不动地随机渐变更换手工主题
+        // 2. 🕰️ 每 10 秒雷打不动地随机渐变更换手工主题
         self.autopilotTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             self?.triggerRandomAutopilotBlend()
         }
@@ -79,11 +69,8 @@ class PaletteManager: ObservableObject {
     }
     
     private func triggerRandomAutopilotBlend() {
-        // 🎯 从现有的所有手工艺术精髓主题（all）里，随机捞一个富含 low 和 high 的双色组合
-        // 比如 Lava、Sunset、Gold、Neon、Aurora 等等
         guard let randomPreset = SpectrumPalette.all.randomElement() else { return }
         
-        // 🚚 启动平滑插值大调度（利用原本的 60fps 渐变引擎，丝滑晕染过去）
         self.fromPalette = self.currentPalette
         self.toPalette = randomPreset
         
@@ -101,8 +88,9 @@ class PaletteManager: ObservableObject {
         }
     }
     
-    // ── 🚀 完全体动态染色中心：完美匹配八大经典手工主题骨架 ──
-    func updateAlbumColor(_ newColor: Color, _ themeType: String) {
+    // ── 🚀 完全体动态染色中心：支持 [即时硬切 / 丝滑渐变] 切换 ──
+    // 🎯 增加了 animated 参数（默认为 true）
+    func updateAlbumColor(_ newColor: Color, _ themeType: String, animated: Bool = true) {
         // 🚨 安全拦截：如果当前正在自动驾驶（Autopilot），不允许换歌的专辑色来打乱节奏！
         if isAutopilotActive { return }
         
@@ -119,7 +107,7 @@ class PaletteManager: ObservableObject {
         
         // 兜底默认用 落日余晖 主题
         var targetPreset = SpectrumPalette.all.first(where: { $0.name == "Sunset" }) ?? SpectrumPalette.all[0]
-//        print("h=======\(h)")
+        
         // 🎯 密网交织：全量匹配您的所有 8 套艺术主题！
         if themeType == "black" {
             if h >= 0.0 && h < 0.04 {
@@ -162,19 +150,29 @@ class PaletteManager: ObservableObject {
                 targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkCandy" }) ?? targetPreset
             }
         }
-
         
         // 2. 注入血肉：低频（中心侧）死死咬合住真实的专辑色
         let baseLow = newColor
         let dynamicPalette = SpectrumPalette(name: "Hybrid-\(targetPreset.name)", low: baseLow, high: targetPreset.high)
         
-        // 3. 接下来开启平滑的 60fps 插值渐变大调度
-        if fromPalette == nil {
+        // 3. 🚀【核心改进】：处理手动切换与自动切换的分流逻辑
+        if !animated || fromPalette == nil {
+            // 🎯 手动切主题（animated == false）：立刻取消所有定时器，0 秒瞬间硬切落地！
+            self.displayLinkTimer?.invalidate()
+            self.displayLinkTimer = nil
+            
             self.currentPalette = dynamicPalette
             self.fromPalette = dynamicPalette
+            self.toPalette = dynamicPalette
+            self.blendFactor = 1.0
+            
+            DispatchQueue.main.async {
+                self.bgPalette = dynamicPalette.high
+            }
             return
         }
         
+        // 🚚 换歌（animated == true）：开启 1.8 秒丝滑 60fps 渐变
         self.fromPalette = self.currentPalette
         self.toPalette = dynamicPalette
         
@@ -215,8 +213,6 @@ class PaletteManager: ObservableObject {
     
     /// ── UI层渲染光柱时的颜色调用 ──
     func color(position: Double, intensity: Double) -> Color {
-        // 🎯 修复光柱渲染：让它真正把手工主题的 low (低频) 和 high (高频) 渐变拉出来！
-        // 之前 from: high to: high 是单色，现在我们用 position (0.0~1.0) 完美重现双色伞状山包！
         let color = interpolate(
             from: currentPalette.high,
             to: currentPalette.high,

@@ -39,7 +39,7 @@ class AudioManager: ObservableObject {
     private var result: [Float]
     
     // ── Attack / Release ─────────────────────────────────────────
-    private let attack:  Float = 1.2
+    private let attack:  Float = 1.0
     private let release: Float = 0.2
     //基准值：1.4/0.3
     
@@ -252,30 +252,14 @@ class AudioManager: ObservableObject {
             triggered: finalTriggered
         )
         
-        // 📥 此时安全地在后台捞出刚刚算好的触发值
         let currentTrigger = self.triggerValue
-        //        let triggered = triggered()
-        //        let rawBandsL = computeBands(
-        //            rawMags: magsL,
-        //            previous: prevL,
-        //            peak: &peakL,
-        //            triggered: triggered
-        //        )
-        //        let rawBandsR = computeBands(
-        //            rawMags: magsR,
-        //            previous: prevR,
-        //            peak: &peakR,
-        //            triggered: triggered
-        //        )
-        
         
         lastLeftRender  = rawBandsL
         lastRightRender = rawBandsR
         
-        // ── 🚀 统一打包派发给主线程 ──────────────────────────────────────────
+        // ── 统一打包派发给主线程 ──────────────────────────────────────────
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            // 所有的 @Published 变量在同一条主线程流水线上同时赋值，警告彻底消失！
             self.leftMagnitudes = lastLeftRender
             self.rightMagnitudes = lastRightRender
             self.triggerValue = currentTrigger
@@ -284,7 +268,6 @@ class AudioManager: ObservableObject {
     }
     
     // MARK: - FFT
-    
     private func computeFFT(samples: [Float]) -> [Float] {
         guard let setup = fftSetup else { return [] }
         
@@ -336,7 +319,7 @@ class AudioManager: ObservableObject {
                     // 找到第一个时间大于当前播放时间的子弹索引
                     if let newIndex = beatsMap.firstIndex(where: { $0 >= currentSeconds }) {
                         currentKickIndex = newIndex
-                        //                        print("🔄 [滚动条联动] 发现进度条跳跃，弹夹光标紧急重置为: \(newIndex)")
+//                        print("🔄 [滚动条联动] 发现进度条跳跃，弹夹光标紧急重置为: \(newIndex)")
                     } else {
                         currentKickIndex = beatsMap.count // 如果拽到了歌尾，光标直接推满
                     }
@@ -352,7 +335,7 @@ class AudioManager: ObservableObject {
                     // 这代表鼓点正在发生，或者即将发生，立刻无延时拦截点火！
                     if abs(currentSeconds - targetKickTime) <= 0.035 {
                         isAITriggeredNow = true
-                        //                        print("currentKickIndex=====\(currentKickIndex)")
+//                        print("currentKickIndex=====\(currentKickIndex)")
                         // 核心：点火成功后，立刻利落地把这颗子弹弹出弹夹，指针进 1
                         currentKickIndex += 1
                     }
@@ -375,45 +358,55 @@ class AudioManager: ObservableObject {
         let maxFreq: Float = 5500
         
         peak *= peakDecay
-        //        var framePeak: Float = 0
+        
+        // ── 🥁 1. 预计算低频（0, 1, 2）的平均鼓点爆发力 ──────────────────────────
+        var bassEnergySum: Float = 0.0
+        for i in 0..<3 {
+            let (b1, b2) = bins(band: i, minFreq: minFreq, maxFreq: maxFreq, sr: currentSampleRate)
+            let energy = computeEnergy(from: b1, to: b2, in: rawMags)
+            let norm = energy / max(peak, 1e-10)
+            let dB = log2(max(norm, 1e-10)) * 3.0103
+            let mapped = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
+            bassEnergySum += min(max(mapped, 0), 1)
+        }
+        
+        let avgBassEnergy = bassEnergySum / 3.0
+        
+        // 设置低频触发门槛：只有低频能量高于 0.35 时，才触发中高频联动抖动
+        let kickThreshold: Float = 0.65
+        let kickImpact = max(0, avgBassEnergy - kickThreshold)
+        // ──────────────────────────────────────────────────────────────────
         
         for i in 0..<bandCount {
-            // 🚀 这里自动调用全新的 Mel 算法，分出来的 b1, b2 绝对丝滑、独立
+            // 🚀 调用全新的 Mel 算法，分出来的 b1, b2 绝对丝滑、独立
             let (b1, b2) = bins(band: i, minFreq: minFreq, maxFreq: maxFreq, sr: currentSampleRate)
             let energy = computeEnergy(from: b1, to: b2, in: rawMags)
             energies[i] = energy
             
             peak = max(peak, energies[i])
-            //            if framePeak > peak {
-            //                peak = peak * 0.98 + framePeak * 0.02
-            //            }
             
             let normalized = energy / max(peak, 1e-10)
             let dB         = log2(max(normalized, 1e-10)) * 3.0103
             let mapped     = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
-            let raw        = min(max(mapped, 0), 1)
             
-            //双声道共享此raw值，取的是这一帧的两个声道谁最大
+            // ── 🥁 2. 将鼓点能量衰减分发给中高频 ─────────────────────────────
+            var redistributedBass: Float = 0.0
+            if i >= 3 {
+                // 距离衰减因子：索引越靠后，鼓点分配到的冲击力越弱（从 0.18 衰减到 0.02）
+                let distanceFactor = max(0.28, 0.28 - Float(i - 3) * 0.005)
+                redistributedBass = kickImpact * distanceFactor
+            } else {
+                redistributedBass *= 0.85
+            }
+            
+            // 融合原生能量与鼓点冲击，严格限制在 0.0 ~ 1.0（绝不顶头！）
+            let raw = min(max(mapped + redistributedBass, 0), 1)
+            // ──────────────────────────────────────────────────────────────────
+            
+            // 双声道共享此 raw 值，取的是这一帧的两个声道谁最大
             tunnelRaw = max(raw, tunnelRaw)
             
-            // 🥁 1. 鼓点中频注入：11 ~ 25 柱（从左往右顺滑阶梯下滑）
-//            if triggered && (i >= 5/*11 && i <= 25*/) {
-//                let relativeIndex = Float(i - 5)
-//                let cheatValue = 0.95 - relativeIndex * 0.04  // 🎯 起点 0.95，终点 0.39
-//                tunnelRaw = tunnelRaw * 0.65 + cheatValue * 0.35
-                //                raw = cheatValue
-//            }
-            
-            // 🎛️ 2. 镲片高频注入：26 ~ 34 柱（以30柱为中心的对称伞状小山包）
-//            if triggered && (i >= 26 && i <= 34) {
-//                let distanceToCenter = abs(Float(i - 30))
-//                let cheatValue = 0.90 - distanceToCenter * 0.08 // 🎯 中心 0.90，边缘 0.58
-//                tunnelRaw = tunnelRaw * 0.7 + cheatValue * 0.3
-                //                raw = cheatValue
-//            }
-            
             var smoothed: Float = 0.0
-            
             let prev = previous[i]
             
             if i >= 4 {
@@ -429,6 +422,13 @@ class AudioManager: ObservableObject {
                     if raw > prev {
                         // 爬坡走常规的 attack
                         smoothed = prev * (1.0 - attack) + raw * attack
+//                        let delta = raw - prev
+                        // 🚀【自适应 Attack 公式】：
+                        // 当 delta 很小（平缓起伏）时，attack 约等于 0.65（温柔爬坡）
+                        // 当 delta 很大（重鼓点砸下）时，attack 瞬间升至 0.88（凌厉爆破但绝不硬闪！）
+//                        let dynamicAttack = 0.65 + min(delta, 1.0) * 0.23
+                        
+//                        smoothed = prev * (1.0 - dynamicAttack) + raw * dynamicAttack
                     } else {
                         // 🎯 核心保护补丁：如果当前是人声持续高位（raw很大），即使 prev 很高，也不允许它触发急速下砸
                         // 我们用一个自适应释放：如果 raw 依然维持在高位（比如 > 0.6），就用极其温柔的常规 release 维持住！
@@ -436,7 +436,8 @@ class AudioManager: ObservableObject {
                             smoothed = prev * release + raw * (1.0 - release)
                         } else {
                             // 只有当音乐真正进入低谷、要卸力时，才允许它快速自由落体
-                            smoothed = prev * 0.15 + raw * 0.85
+                            smoothed = //prev * 0.35 + raw * 0.65
+                            prev * 0.15 + raw * 0.85
                         }
                     }
                 }
@@ -451,11 +452,11 @@ class AudioManager: ObservableObject {
             result[i] = smoothed
         }
         
-        // ── 🎛️ 参谋长推荐：高频阻尼防爆网（26 ~ 34柱） ──────────────────
+        // ── 🎛️ 参谋长推荐：高频阻尼防爆网（26 ~ 31柱） ──────────────────
         for p in 26...31 {
             // 🎯 计算当前柱子距离最远端的深度
             // p=26 时 alpha 约 0.70（给乐器留点脆劲）
-            // p=34 时 alpha 约 0.45（给极端高频齿音加上重沙包，允许它跳，但必须极其丝滑）
+            // p=31 时 alpha 约 0.45（给极端高频齿音加上重沙包，允许它跳，但必须极其丝滑）
             let progress = Float(p - 26) / 8.0 // 0.0 ~ 1.0
             let currentWeight = 0.70 - progress * 0.25 // 0.70 下降到 0.45
             let prevWeight = 1.0 - currentWeight

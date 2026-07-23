@@ -84,7 +84,12 @@ struct AlbumImageView: View {
             // 1. 让背景分析器换上提取出来的真·平均色
             let extractedColor = Color(avgNSColor)
             // 2. 让大排灯光谱主题开始平滑渐变
-            palette.updateAlbumColor(extractedColor, themeType)
+            palette
+                .updateAlbumColor(
+                    extractedColor,
+                    themeType,
+                    animated: player.isAutopilotMode
+                )
         }
 #else
         // ── iOS 架构 ──
