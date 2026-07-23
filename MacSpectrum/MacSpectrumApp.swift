@@ -11,6 +11,12 @@ import SwiftUI
 struct MacSpectrumApp: App {
     // 🚀 全局唯一的指挥官单例
     @StateObject private var player: PlayerManager
+<<<<<<< HEAD
+=======
+    
+    @StateObject private var lyric: LyricManager
+    
+>>>>>>> modi
     @StateObject private var palette = PaletteManager()
     
     let songsURL: URL
@@ -31,14 +37,22 @@ struct MacSpectrumApp: App {
         
         // 初始化 PlayerManager，把准备好的路径喂给它
         self._player = StateObject(wrappedValue: PlayerManager(songsURL: songsDir, lyricsURL: lyricsDir))
+
+        self._lyric = StateObject(wrappedValue: LyricManager(path: lyricsDir.path))
+
     }
     
     var body: some Scene {
         WindowGroup {
             // 🚀 核心关键：必须把这个唯一的 player 和 palette 实体，通过参数强行喂给 MainPlayerView！
-            MainPlayerView(player: player, palette: palette)
+            MainPlayerView(
+                player: player,
+                palette: palette,
+                lyricManager: lyric
+            )
                 .environmentObject(player)
                 .environmentObject(palette)
+                .environmentObject(lyric)
         }
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)

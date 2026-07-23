@@ -53,11 +53,6 @@ class PlayerManager: ObservableObject {
     @Published var currentIndex: Int = 0
     
     private var playToken = 0
-    
-//    private let albumsPath = "/Users/guopeng/Documents/spectrumplayer/albums"
-    
-//    var albumsPath: String
-    
     @Published var albumImages: [NSImage] = []
     
     // 存储总时长，load 文件时赋值

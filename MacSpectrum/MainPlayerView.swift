@@ -12,8 +12,7 @@ struct MainPlayerView: View {
     
     @ObservedObject var player: PlayerManager
     @ObservedObject var palette: PaletteManager
-    
-    @StateObject private var lyricManager = LyricManager()
+    @StateObject var lyricManager: LyricManager
     
     @State private var playlists: [Playlist] = []
     @State private var selectedPlaylist: Playlist?
@@ -207,21 +206,34 @@ struct MainPlayerView: View {
     }
     
     private var playlistView: some View {
-        List(playlists) { playlist in
-            let selected = selectedPlaylist?.id == playlist.id
-            Text(selected ? "\(playlist.name)  •" : playlist.name)
-                .font(.system(size: 15, weight: .regular, design: .rounded))
-                .foregroundColor(forColor(nowPlaying: selected))
-                .onTapGesture {
-                    selectedPlaylist = playlist
-                    if let plylst = selectedPlaylist?.songs {
-                        player.loadPlaylist(songs: plylst)
+        ScrollViewReader { proxy in
+            List(playlists) { playlist in
+                let selected = selectedPlaylist?.id == playlist.id
+                Text(selected ? "\(playlist.name)  •" : playlist.name)
+                    .font(.system(size: 15, weight: .regular, design: .rounded))
+                    .foregroundColor(forColor(nowPlaying: selected))
+                    .onTapGesture {
+                        selectedPlaylist = playlist
+                        if let plylst = selectedPlaylist?.songs {
+                            player.loadPlaylist(songs: plylst)
+                        }
                     }
+                    .cornerRadius(8)
+                    .listRowBackground(Color.clear)
+            }
+            .scrollContentBackground(.hidden)
+            .onChange(of: selectedPlaylist?.id) { _, newID in
+                guard let targetID = newID else { return }
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    proxy.scrollTo(targetID, anchor: .center)
                 }
-                .cornerRadius(8)
-                .listRowBackground(Color.clear)
+            }
+            .onAppear {
+                if let currentID = selectedPlaylist?.id {
+                    proxy.scrollTo(currentID, anchor: .center)
+                }
+            }
         }
-        .scrollContentBackground(.hidden)
     }
     
     private var songListView: some View {

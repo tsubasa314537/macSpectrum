@@ -12,7 +12,11 @@ class LyricManager: ObservableObject {
     @Published var lyrics: [LyricLine] = []
     @Published var currentLineId: UUID? = nil
     
-    let path = "/Users/guopeng/Documents/spectrumplayer/lyrics"
+    let lyricPath: String
+    
+    init(path: String) {
+        lyricPath = path
+    }
     
     // 1. 模糊文件名匹配算法
     // 摘除 artist 参数，只用一整条 title 去盘它！
@@ -20,7 +24,7 @@ class LyricManager: ObservableObject {
         self.lyrics = [] // 切歌时先清空
         
         let fileManager = FileManager.default
-        let lyricsDirectoryURL = URL(fileURLWithPath: path) //
+        let lyricsDirectoryURL = URL(fileURLWithPath: lyricPath)
         
         do {
             let fileURLs = try fileManager.contentsOfDirectory(at: lyricsDirectoryURL, includingPropertiesForKeys: nil) //
