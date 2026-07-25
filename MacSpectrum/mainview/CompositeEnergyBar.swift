@@ -3,9 +3,47 @@
 //  MacSpectrum
 //
 //  Created by 郭鹏 on 2026/7/21.
-//原
+//
 
 import SwiftUI
+
+// 👴 老爷子专属：两腰内凹的优雅双曲三角形 Shape
+struct ConcaveTriangleShape: Shape {
+    /// 凹陷程度控制系数 (0.0 ~ 1.0)
+    /// 0.25~0.35 为非常性感优雅的收腰弧线；值越大腰越细！
+    var concavity: CGFloat = 0.30
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        
+        let topCenter = CGPoint(x: rect.midX, y: rect.minY)       // 顶部尖端
+        let bottomLeft = CGPoint(x: rect.minX, y: rect.maxY)     // 左下角（落于椭圆切线）
+        let bottomRight = CGPoint(x: rect.maxX, y: rect.maxY)    // 右下角（落于椭圆切线）
+        
+        // 1. 起点：顶部尖端
+        path.move(to: topCenter)
+        
+        // 2. 左腰内凹贝塞尔曲线（控制点向内部收拢）
+        let leftControlPoint = CGPoint(
+            x: rect.minX + (rect.width * concavity),
+            y: rect.midY
+        )
+        path.addQuadCurve(to: bottomLeft, control: leftControlPoint)
+        
+        // 3. 底部横线（与下面的椭圆平滑接轨）
+        path.addLine(to: bottomRight)
+        
+        // 4. 右腰内凹贝塞尔曲线
+        let rightControlPoint = CGPoint(
+            x: rect.maxX - (rect.width * concavity),
+            y: rect.midY
+        )
+        path.addQuadCurve(to: topCenter, control: rightControlPoint)
+        
+        path.closeSubpath()
+        return path
+    }
+}
 
 struct CompositeEnergyBar: View {
     var height: CGFloat          // 外部算好的总高度
@@ -19,35 +57,15 @@ struct CompositeEnergyBar: View {
     var body: some View {
         // 📐 尺寸精细定义
         let baseRectHeight: CGFloat = 2.0  // 底部矩形垫
-        // 🚀 把椭圆高度增加到 8 像素，确保它的圆弧能完整露出来！
-        //        let ellipseHeight: CGFloat  = max(4.0, min(10.0, height * 0.15))
-        let needleHeight: CGFloat   = 10.0               // 针尖固定高度（足够长，才显得细锐）
+        let needleHeight: CGFloat   = 10.0               // 针尖固定高度
+        
         // 膨胀腰腹宽度
         let bellyWidth = barWidth * (0.85 + intensity * 1.5)
-        //        let baseWidth  = barWidth * 0.85
         
-        let ellipseCalculatedHeight = max(4.0, height - baseRectHeight - needleHeight + 4.0)
+        let ellipseCalculatedHeight = max(4.0, height - baseRectHeight - needleHeight + 4.0) * 0.9
         
-        let progress = max(0.0, min(1.0, (ellipseCalculatedHeight - minH) / (maxH - minH)))
-        let dynamicNeedleWidth = 1.5 + progress * 1.5
-        
-        // 1. 动态计算线条粗细与透明度（随能量 intensity 呼吸跳动）
-        // 能量低时线条细致精悍（2.0），能量高时线宽膨胀扩散（4.5），形成发光炸开的视觉假象！
-//        let dynamicLineWidth = 1.0 + intensity * 4.0
-//        
-//        // 2. 动态计算光晕透明度：能量越高，发光感越强！
-//        let dynamicOpacity = 0.25 + intensity * 0.75
-//        
-//        // 3. 构建能量响应的极轻量渐变
-//        let dynamicStrokeGradient = LinearGradient(
-//            colors: [
-////                baseColor.opacity(dynamicOpacity),
-////                baseColor.opacity(dynamicOpacity * 0.35),
-//                baseColor.opacity(dynamicOpacity)
-//            ],
-//            startPoint: .bottom,
-//            endPoint: .top
-//        )
+        // 🎯 动态计算内凹三角形顶端的高度（跟随能量感向上延伸，越爆破拉得越长！）
+        let triangleDynamicHeight = max(8.0, ellipseCalculatedHeight * 0.75) * 0.9
         
         let barGradient = LinearGradient(
             colors: [
@@ -70,27 +88,24 @@ struct CompositeEnergyBar: View {
         let coreLineWidth  = 1.0 + intensity * 2.5     // 保持精致
         let coreOpacity    = 0.30 + intensity * 0.65    // 核心高亮
         
-        // 🚀 【ZStack 层叠绘制】：自下而上层叠，摆脱 VStack 挤压
+        // 🚀 【ZStack 层叠绘制】：自下而上层叠
         ZStack(alignment: .bottom) {
-            RoundedRectangle(cornerRadius: 50)
-                .frame(width: dynamicNeedleWidth, height: ellipseCalculatedHeight * 0.25/*(baseRectHeight + ellipseCalculatedHeight) * 1.2*/)
-                .padding(.bottom, baseRectHeight + ellipseCalculatedHeight - 2.0)
-//                .foregroundColor(baseColor)
-//                .blur(radius: 1.0, opaque: false)
-            // Layer 1: 顶天立地的内凹针尖（高度覆盖整体，底部直接插到底座上）
-            //            QQNeedleShape(intensity: intensity)
-            //                .frame(width: dynamicNeedleWidth, height: baseRectHeight + ellipseCalculatedHeight + 7.0)
-            //                .padding(.bottom, baseRectHeight)
-            // Layer 2: 原生饱满椭圆（压在针尖和底座之间，做完美的腰腹圆弧）
-//            Ellipse()
-//                .stroke(dynamicStrokeGradient, lineWidth: dynamicLineWidth)
-//                .frame(width: bellyWidth * 0.8, height: ellipseCalculatedHeight)
-//                .padding(.top, baseRectHeight / 2.0) // 严丝合缝压住针尖基部
-//                .background(Color(red: 0.85, green: 0.85, blue: 0.85))
-//                .blur(radius: blurRatio * 0.3, opaque: false)
+            
+            // 🌟 Layer 1: 最顶部的【内凹收腰三角形】
+            // 宽度完全对接内芯椭圆 (bellyWidth * 0.8)，底部精准卡在椭圆的上半部位
+            ConcaveTriangleShape(concavity: 0.32)
+                .frame(width: bellyWidth * 0.8, height: triangleDynamicHeight)
+                .padding(.bottom, baseRectHeight + ellipseCalculatedHeight - (triangleDynamicHeight * 0.3))
+            
+            // 🌟 中间的椭圆光晕层
             ZStack {
-                // 🌟 第一层（外晕）：宽而透的“假 Blur”扩散圈
-                // 它在极宽的线宽下，配合极低的透明度，视觉上会形成完美的渐隐烟雾感！
+                // 0. 🎯【新增】实心遮罩椭圆：专门用来把穿透进来的针尖遮住！
+                // 不加 stroke，只用纯填充，颜色用底色或纯色，把它当遮罩
+                Ellipse()
+                    .fill(Color(red: 0.85, green: 0.85, blue: 0.85)) // 或者是灰白主题的背景色/配合渐变
+                    .frame(width: bellyWidth * 0.7, height: ellipseCalculatedHeight)
+                
+                // 1. 外晕：宽而透的“假 Blur”扩散圈
                 Ellipse()
                     .stroke(
                         baseColor.opacity(outerOpacity),
@@ -98,7 +113,7 @@ struct CompositeEnergyBar: View {
                     )
                     .frame(width: bellyWidth * 0.85, height: ellipseCalculatedHeight + 2)
                 
-                // 🌟 第二层（内芯）：精致醒目的高能量核心
+                // 2. 内芯：精致醒目的高能量核心
                 Ellipse()
                     .stroke(
                         baseColor.opacity(coreOpacity),
@@ -107,10 +122,10 @@ struct CompositeEnergyBar: View {
                     .frame(width: bellyWidth * 0.8, height: ellipseCalculatedHeight)
             }
             .padding(.top, baseRectHeight / 2.0)
-            // Layer 3: 最底部的矩形微型底座
+            
+            // 🌟 Layer 3: 最底部的矩形微型底座
             Rectangle()
-                .frame(width: dynamicNeedleWidth * 1.5, height: baseRectHeight)
-//                .foregroundColor(baseColor)
+                .frame(width: bellyWidth * 0.5, height: baseRectHeight)
         }
         .fillGradient(barGradient)
         .frame(width: barWidth, height: height, alignment: .bottom)
