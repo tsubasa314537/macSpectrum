@@ -74,7 +74,7 @@ struct MainPlayerView: View {
                         .frame(height: 150)
                         .padding(.vertical, 0)
                     }
-                    .frame(width: 1000, height: 600)
+                    .frame(width: 1050, height: 600)
                     
                     Divider()
                     

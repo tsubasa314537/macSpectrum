@@ -27,7 +27,7 @@ class AudioManager: ObservableObject {
     
     private var peakL: Float = 1e-6
     private var peakR: Float = 1e-6
-    private let peakDecay: Float = 0.998
+    private let peakDecay: Float = 0.9995
     
     private var currentSampleRate: Float = 44100
     
