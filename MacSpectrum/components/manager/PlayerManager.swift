@@ -358,16 +358,10 @@ class PlayerManager: ObservableObject {
         // 直接读取真实、正确的 outputNode 表现延迟（扬声器返回 0.001s，AirPods 返回 0.160s）
         let hardwareLatency = engine.outputNode.presentationLatency
         
-        // 🎯 【拨乱反正的核心公式】：
-        // 我们的目标是让“软件延迟 + 硬件延迟 + 软件沙漏扣留时间 = 一个恒定的同步完美点”
-        // 经过您之前的实测，当总延迟顶到 180ms（0.180秒）左右时，人眼和人耳最舒服。
-        
         let targetTotalDelay: Double = 0.198 // 👈 黄金同步靶向总时间
-        let softwareBaseOffset: Double = 0.023 // 您的软件渲染基础开销
+        let softwareBaseOffset: Double = 0.02 // 您的软件渲染基础开销
         
-        // ⚖️ 关键在此：用总目标，减去软件开销，再减去硬件已经自带的延迟！
-        // 设备硬件自己延迟得越多（如 AirPods 160ms），我们的软件沙漏就应该扣留得越少（183 - 23 - 160 = 0ms，开闸放水！）
-        // 设备硬件自己速度极快（如 扬声器 1ms），我们的软件沙漏就得多扣留一会儿（183 - 23 - 1 = 159ms，憋住声音！）
+        // 用总目标，减去软件开销，再减去硬件已经自带的延迟！
         let calculatedDelay = targetTotalDelay - softwareBaseOffset - hardwareLatency
         
         // 限幅保护，防止算出负数
@@ -395,7 +389,6 @@ class PlayerManager: ObservableObject {
     // MARK: - 播放控制
     func nextTrack() {
         guard !shuffledOrder.isEmpty else { return }
-//        beatDetector.cancelCurrentAnalysis()
         shufflePointer += 1
         if shufflePointer >= shuffledOrder.count {
             generateShuffleOrder()
@@ -425,14 +418,6 @@ class PlayerManager: ObservableObject {
     
     func play(song: Song) {
         stop()
-        
-        beatDetector.analyzeSongFile(fileURL: song.url){ [weak self] kicks in
-            self?.beats = kicks
-            
-            if let currentBeats = self?.beats, let pNode = self?.playerNode {
-                self?.spectrum.setDrumMap(currentBeats,  for: pNode)
-            }
-        }
         
         do {
             audioFile = try AVAudioFile(forReading: song.url)

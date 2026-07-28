@@ -39,11 +39,11 @@ class AudioManager: ObservableObject {
     private var result: [Float]
     
     // ── Attack / Release ─────────────────────────────────────────
-    private let attack:  Float = 1.0
+    private let attack:  Float = 0.8
     private let release: Float = 0.2
     //基准值：1.4/0.3
     
-    // ── 输出：左右各 48 个频段 ────────────────────────────────────
+    // ── 输出：左右各 32 个频段 ────────────────────────────────────
     @Published var leftMagnitudes:  [Float]
     @Published var rightMagnitudes: [Float]
     
@@ -61,10 +61,6 @@ class AudioManager: ObservableObject {
     var isTriggered: Bool = false
     var triggerValue: Float = 0.0 // 👈 这个值可以传给 UI 驱动全局闪烁或鼓点爆炸动效
     var tunnelRaw: Float = 0.0
-    
-    private var lastRealtimeTriggerTime: Double = 0.0
-    private let realtimeCooldown: Double = 0.08       // 80毫秒冷却，防抖去尾巴
-    private var previousRealtimeDB: Float = -120.0
     
     init() {
         let log2n = vDSP_Length(log2(Float(fftSize)))
@@ -85,12 +81,6 @@ class AudioManager: ObservableObject {
         fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))
     }
     
-    func setDrumMap(_ beats: [TimeInterval], for node: AVAudioPlayerNode) {
-        self.beatsMap = beats
-        self.currentKickIndex = 0
-        self.playerNode = node
-    }
-    
     func installTap(on mixer: AVAudioMixerNode) {
         
         let format = mixer.outputFormat(forBus: 0)
@@ -98,65 +88,12 @@ class AudioManager: ObservableObject {
         mixer.removeTap(onBus: 0)
         
         mixer.installTap(onBus: 0,
-                         //在一个fft窗口周期内回调4次
-                         bufferSize: AVAudioFrameCount(fftSize / 4),
+                         //在一个fft窗口周期内回调1次
+                         bufferSize: AVAudioFrameCount(fftSize / 2),
                          format: format) { [weak self] buffer, _ in
             self?.processAudio(buffer: buffer,
                                channelCount: Int(format.channelCount))
         }
-    }
-    
-    // MARK: - 🚀 节拍/起音检测特工组 (Onset Detection)
-    // 1. 特征提取：用硬件加速算 RMS 均方根
-    private func computeTriggerFeature(samples: [Float]) -> Float {
-        guard !samples.isEmpty else { return 0 }
-        var rms: Float = 0
-        // 🎯 使用 Apple 矢量数学加速，比 for 循环快几倍，专抓突变
-        vDSP_rmsqv(samples, 1, &rms, vDSP_Length(samples.count))
-        return rms
-    }
-    
-    // 2. 状态机更新与峰值判定
-    private func updateOnsetEnvelope(feature: Float) {
-        frameIndex += 1
-        
-        // 🎯 算出一阶差分（Flux）：只有能量【增加】时才算，人声拉长音减少时为 0
-        let flux = max(0, feature - prevTriggerFeature)
-        prevTriggerFeature = feature
-        
-        // 🎯 一阶低通滤波器构建自适应动态包络
-        let alpha: Float = 0.85
-        envelopeState = alpha * envelopeState + (1 - alpha) * flux
-        onsetEnvelope = envelopeState
-        
-        let isPeak = detectPeak(current: flux) // 👉 注意：通常用当前的 flux 去跟包络线比，比直接用 envelope 更好
-        
-        if isPeak {
-            triggerValue = 1.0
-            isTriggered = true
-            lastPeakFrame = frameIndex
-        } else {
-            let framesSincePeak = frameIndex - lastPeakFrame
-            if framesSincePeak > 2 {
-                triggerValue *= 0.88 // 🎯 节拍触发后的快速卸力阻尼
-                if triggerValue < 0.02 {
-                    triggerValue = 0
-                    isTriggered = false
-                }
-            }
-        }
-    }
-    
-    // 3. 动态阈值防抖拦截
-    private func detectPeak(current: Float) -> Bool {
-        let threshold: Float = 0.02 // 🎯 起跳阈值，如果放电音《Bad Romance》可以适当调小或调大
-        guard current > threshold else { return false }
-        
-        // 防抖：前后两发极限快鼓之间至少隔 3 帧（在 23ms 回调下约为 70 毫秒，完美对应极限快鼓连打）
-        guard frameIndex - lastPeakFrame > 3 else { return false }
-        
-        // 自适应判定：当前的变化率必须大于整体平均包络的某个比例
-        return current > onsetEnvelope * 0.95
     }
     
     // MARK: - 音频处理（回调线程）
@@ -189,70 +126,16 @@ class AudioManager: ObservableObject {
         let prevL = leftMagnitudes
         let prevR = rightMagnitudes
         
-        // ── 🚀 接入实时时域暴力大鼓雷达（直接利用 256 滑动窗口） ──────────────────
-        let triggerSamplesSize = 256
-        var isRealtimeKickTriggered = false
-        
-        if frameCount >= triggerSamplesSize {
-            // 1. 抓取这 256 个时域点，混合左右声道
-            var triggerSamples = [Float](repeating: 0, count: triggerSamplesSize)
-            let startOffset = frameCount - triggerSamplesSize
-            for i in 0..<triggerSamplesSize {
-                let sampleL = data[0][startOffset + i]
-                let sampleR = channelCount >= 2 ? data[1][startOffset + i] : sampleL
-                triggerSamples[i] = max(abs(sampleL), abs(sampleR)) // 🎯 暴力取绝对值最大值
-            }
-            
-            // 2. 用硬件加速算时域 RMS 物理分贝
-            var rmsValue: Float = 0.0
-            vDSP_rmsqv(triggerSamples, 1, &rmsValue, vDSP_Length(triggerSamplesSize))
-            let currentDB = 20.0 * log10(max(rmsValue, 1e-6))
-            
-            // 3. 实时绝对值判定（-5.0dB 绝对真理，配合 80ms 冷却去噪）
-            let deltaDB = currentDB - previousRealtimeDB
-            
-            // 🎯 老爷子，这里就是您刚才测出来的黄金手感参数！
-            if currentDB >= -6.0/* && deltaDB > 0.0*/ {
-                print("***********IN***************")
-                // 获取当前真实的播放时间
-                var currentSeconds: Double = 0.0
-                if let node = playerNode, node.isPlaying,
-                   let nodeTime = node.lastRenderTime,
-                   let playerTime = node.playerTime(forNodeTime: nodeTime) {
-                    currentSeconds = Double(playerTime.sampleTime) / playerTime.sampleRate
-                }
-                
-                // 冷却时间判定
-                if currentSeconds - lastRealtimeTriggerTime >= realtimeCooldown {
-                    isRealtimeKickTriggered = true
-                    lastRealtimeTriggerTime = currentSeconds
-                }
-            }
-            previousRealtimeDB = currentDB
-            
-            // 4. 兼容保留原本的 Onset 状态机（防止 UI 的其他联动断掉）
-            let feature = computeTriggerFeature(samples: triggerSamples)
-            updateOnsetEnvelope(feature: feature)
-        }
-        
-        // 📥 【双剑合一】：只要离线子弹触发了，或者我们实时暴力雷达抓到了，都算触发！
-        let offlineTriggered = triggered()
-        let finalTriggered = offlineTriggered || isRealtimeKickTriggered
-        
         let rawBandsL = computeBands(
             rawMags: magsL,
             previous: prevL,
-            peak: &peakL,
-            triggered: finalTriggered
+            peak: &peakL
         )
         let rawBandsR = computeBands(
             rawMags: magsR,
             previous: prevR,
-            peak: &peakR,
-            triggered: finalTriggered
+            peak: &peakR
         )
-        
-        let currentTrigger = self.triggerValue
         
         lastLeftRender  = rawBandsL
         lastRightRender = rawBandsR
@@ -262,8 +145,6 @@ class AudioManager: ObservableObject {
             guard let self = self else { return }
             self.leftMagnitudes = lastLeftRender
             self.rightMagnitudes = lastRightRender
-            self.triggerValue = currentTrigger
-            self.isTriggered = (currentTrigger > 0.0)
         }
     }
     
@@ -301,81 +182,12 @@ class AudioManager: ObservableObject {
         return mags
     }
     
-    private func triggered() -> Bool {
-        // ── 🚀 【降维打击核心判定】 ──────────────────────────────────
-        var isAITriggeredNow = false
-        
-        if !beatsMap.isEmpty, currentKickIndex < beatsMap.count,
-           let node = playerNode, node.isPlaying {
-            
-            // 在 computeBands 判定前注入：
-            if let nodeTime = node.lastRenderTime,
-               let playerTime = node.playerTime(forNodeTime: nodeTime) {
-                let currentSeconds = Double(playerTime.sampleTime) / playerTime.sampleRate
-                
-                // ── 🚨 【黄金补丁】：侦测 boringnotch 滚动条拖拽 ──────────────────────────────────
-                if abs(currentSeconds - lastFrameSeconds) > 0.5 {
-                    // 🏃‍♂️ 发现用户拉进度条了！不管拉向哪里，立刻用二分查找法重置弹夹光标！
-                    // 找到第一个时间大于当前播放时间的子弹索引
-                    if let newIndex = beatsMap.firstIndex(where: { $0 >= currentSeconds }) {
-                        currentKickIndex = newIndex
-//                        print("🔄 [滚动条联动] 发现进度条跳跃，弹夹光标紧急重置为: \(newIndex)")
-                    } else {
-                        currentKickIndex = beatsMap.count // 如果拽到了歌尾，光标直接推满
-                    }
-                }
-                lastFrameSeconds = currentSeconds // 🎯 刷新备忘录
-                
-                // ── 🥷 重新焊装的超级子弹精准雷达大闸 ──────────────────────────────────
-                // 每次实时进来，我们都用当前时间 currentSeconds 去弹夹库里校对
-                if currentKickIndex < beatsMap.count {
-                    let targetKickTime = beatsMap[currentKickIndex]
-                    
-                    // 🎯 黄金捕获窗口：只要当前音频播放的时间，已经进入到鼓点前后 35 毫秒的范围内
-                    // 这代表鼓点正在发生，或者即将发生，立刻无延时拦截点火！
-                    if abs(currentSeconds - targetKickTime) <= 0.035 {
-                        isAITriggeredNow = true
-//                        print("currentKickIndex=====\(currentKickIndex)")
-                        // 核心：点火成功后，立刻利落地把这颗子弹弹出弹夹，指针进 1
-                        currentKickIndex += 1
-                    }
-                    // 🎯 防卡死大闸：如果播放时间已经远远甩开（超过了 35 毫秒）这颗子弹，说明这颗子弹错过了
-                    // 必须立刻把它扔掉，让指针往前走，去等待下一颗真鼓点子弹，防止弹夹卡死在原地
-                    else if currentSeconds > targetKickTime + 0.035 {
-                        currentKickIndex += 1
-                    }
-                }
-            }
-        }
-        
-        
-        return isAITriggeredNow
-    }
-    
     // MARK: - 频段计算
-    private func computeBands(rawMags: [Float], previous: [Float], peak: inout Float, triggered: Bool) -> [Float] {
+    private func computeBands(rawMags: [Float], previous: [Float], peak: inout Float) -> [Float] {
         let minFreq: Float = 45
         let maxFreq: Float = 5500
         
         peak *= peakDecay
-        
-        // ── 🥁 1. 预计算低频（0, 1, 2）的平均鼓点爆发力 ──────────────────────────
-        var bassEnergySum: Float = 0.0
-        for i in 0..<3 {
-            let (b1, b2) = bins(band: i, minFreq: minFreq, maxFreq: maxFreq, sr: currentSampleRate)
-            let energy = computeEnergy(from: b1, to: b2, in: rawMags)
-            let norm = energy / max(peak, 1e-10)
-            let dB = log2(max(norm, 1e-10)) * 3.0103
-            let mapped = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
-            bassEnergySum += min(max(mapped, 0), 1)
-        }
-        
-        let avgBassEnergy = bassEnergySum / 3.0
-        
-        // 设置低频触发门槛：只有低频能量高于 0.35 时，才触发中高频联动抖动
-        let kickThreshold: Float = 0.65
-        let kickImpact = max(0, avgBassEnergy - kickThreshold)
-        // ──────────────────────────────────────────────────────────────────
         
         for i in 0..<bandCount {
             // 🚀 调用全新的 Mel 算法，分出来的 b1, b2 绝对丝滑、独立
@@ -389,18 +201,7 @@ class AudioManager: ObservableObject {
             let dB         = log2(max(normalized, 1e-10)) * 3.0103
             let mapped     = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
             
-            // ── 🥁 2. 将鼓点能量衰减分发给中高频 ─────────────────────────────
-            var redistributedBass: Float = 0.0
-            if i >= 3 {
-                // 距离衰减因子：索引越靠后，鼓点分配到的冲击力越弱（从 0.18 衰减到 0.02）
-                let distanceFactor = max(0.28, 0.28 - Float(i - 3) * 0.005)
-                redistributedBass = kickImpact * distanceFactor
-            } else {
-                redistributedBass *= 0.85
-            }
-            
-            // 融合原生能量与鼓点冲击，严格限制在 0.0 ~ 1.0（绝不顶头！）
-            let raw = min(max(mapped + redistributedBass, 0), 1)
+            let raw = min(max(mapped/* + redistributedBass*/, 0), 1)
             // ──────────────────────────────────────────────────────────────────
             
             // 双声道共享此 raw 值，取的是这一帧的两个声道谁最大
@@ -408,57 +209,22 @@ class AudioManager: ObservableObject {
             
             var smoothed: Float = 0.0
             let prev = previous[i]
-            
-            if i >= 4 {
-                if triggered {
-                    // 🚀 鼓点来了：如果原本音乐的 raw 已经比 prev 还要高（人声稳定高位），那就尊重人声
-                    // 否则，才用我们的混合公式强行把柱子踢上去！
-                    let baseline = max(raw, tunnelRaw)
-                    smoothed = baseline > prev
-                    ? prev * 0.4 + baseline * 0.6  // 稍微加大一点现帧权重，让爬坡更凌厉
-                    : prev * 0.7 + baseline * 0.3 // 人声在高位时，绝对不准它触发“暴跌”，保持稳定
-                } else {
-                    // 🚀 鼓点走了（普通音乐状态）：
-                    if raw > prev {
-                        // 爬坡走常规的 attack
-                        smoothed = prev * (1.0 - attack) + raw * attack
-//                        let delta = raw - prev
-                        // 🚀【自适应 Attack 公式】：
-                        // 当 delta 很小（平缓起伏）时，attack 约等于 0.65（温柔爬坡）
-                        // 当 delta 很大（重鼓点砸下）时，attack 瞬间升至 0.88（凌厉爆破但绝不硬闪！）
-//                        let dynamicAttack = 0.65 + min(delta, 1.0) * 0.23
-                        
-//                        smoothed = prev * (1.0 - dynamicAttack) + raw * dynamicAttack
-                    } else {
-                        // 🎯 核心保护补丁：如果当前是人声持续高位（raw很大），即使 prev 很高，也不允许它触发急速下砸
-                        // 我们用一个自适应释放：如果 raw 依然维持在高位（比如 > 0.6），就用极其温柔的常规 release 维持住！
-                        if raw > 0.7 {
-                            smoothed = prev * release + raw * (1.0 - release)
-                        } else {
-                            // 只有当音乐真正进入低谷、要卸力时，才允许它快速自由落体
-                            smoothed = //prev * 0.35 + raw * 0.65
-                            prev * 0.15 + raw * 0.85
-                        }
-                    }
-                }
-            } else {
-                // 0 ~ 3 柱极低频走常规丝滑路线
                 smoothed = raw > prev
                 ? prev * (1.0 - attack) + raw * attack
                 : prev * release + raw * (1.0 - release)
-            }
             
             tunnelRaw = 0
-            result[i] = smoothed
+            result[i] = smoothed * 0.95 + prev * 0.05
+            
         }
         
         // ── 🎛️ 参谋长推荐：高频阻尼防爆网（26 ~ 31柱） ──────────────────
-        for p in 26...31 {
+        for p in 26...bandCount - 1 {
             // 🎯 计算当前柱子距离最远端的深度
             // p=26 时 alpha 约 0.70（给乐器留点脆劲）
             // p=31 时 alpha 约 0.45（给极端高频齿音加上重沙包，允许它跳，但必须极其丝滑）
             let progress = Float(p - 26) / 8.0 // 0.0 ~ 1.0
-            let currentWeight = 0.70 - progress * 0.25 // 0.70 下降到 0.45
+            let currentWeight = 0.70 - progress * 0.30 // 0.70 下降到 0.45
             let prevWeight = 1.0 - currentWeight
             
             result[p] = result[p] * currentWeight + prevBands[p] * prevWeight
