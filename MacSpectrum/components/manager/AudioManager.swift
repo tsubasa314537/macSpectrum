@@ -17,6 +17,8 @@ class AudioManager: ObservableObject {
     
     private var playerNode: AVAudioPlayerNode?
     
+    private var smoothContrastScale: Float = 1.0
+    
     // ── 双声道各自维护独立的环形缓冲区和峰值 ──────────────────────
     
     private var totalSamples: Int = 0
@@ -64,7 +66,7 @@ class AudioManager: ObservableObject {
     
     private var lastRealtimeTriggerTime: Double = 0.0
     private let realtimeCooldown: Double = 0.08       // 80毫秒冷却，防抖去尾巴
-    private var previousRealtimeDB: Float = -120.0
+//    private var previousRealtimeDB: Float = -120.0
     
     init() {
         let log2n = vDSP_Length(log2(Float(fftSize)))
@@ -209,11 +211,11 @@ class AudioManager: ObservableObject {
             let currentDB = 20.0 * log10(max(rmsValue, 1e-6))
             
             // 3. 实时绝对值判定（-5.0dB 绝对真理，配合 80ms 冷却去噪）
-            let deltaDB = currentDB - previousRealtimeDB
+//            let deltaDB = currentDB - previousRealtimeDB
             
             // 🎯 老爷子，这里就是您刚才测出来的黄金手感参数！
             if currentDB >= -6.0/* && deltaDB > 0.0*/ {
-                print("***********IN***************")
+                //                print("***********IN***************")
                 // 获取当前真实的播放时间
                 var currentSeconds: Double = 0.0
                 if let node = playerNode, node.isPlaying,
@@ -228,7 +230,7 @@ class AudioManager: ObservableObject {
                     lastRealtimeTriggerTime = currentSeconds
                 }
             }
-            previousRealtimeDB = currentDB
+//            previousRealtimeDB = currentDB
             
             // 4. 兼容保留原本的 Onset 状态机（防止 UI 的其他联动断掉）
             let feature = computeTriggerFeature(samples: triggerSamples)
@@ -319,7 +321,7 @@ class AudioManager: ObservableObject {
                     // 找到第一个时间大于当前播放时间的子弹索引
                     if let newIndex = beatsMap.firstIndex(where: { $0 >= currentSeconds }) {
                         currentKickIndex = newIndex
-//                        print("🔄 [滚动条联动] 发现进度条跳跃，弹夹光标紧急重置为: \(newIndex)")
+                        //                        print("🔄 [滚动条联动] 发现进度条跳跃，弹夹光标紧急重置为: \(newIndex)")
                     } else {
                         currentKickIndex = beatsMap.count // 如果拽到了歌尾，光标直接推满
                     }
@@ -335,7 +337,7 @@ class AudioManager: ObservableObject {
                     // 这代表鼓点正在发生，或者即将发生，立刻无延时拦截点火！
                     if abs(currentSeconds - targetKickTime) <= 0.035 {
                         isAITriggeredNow = true
-//                        print("currentKickIndex=====\(currentKickIndex)")
+                        //                        print("currentKickIndex=====\(currentKickIndex)")
                         // 核心：点火成功后，立刻利落地把这颗子弹弹出弹夹，指针进 1
                         currentKickIndex += 1
                     }
@@ -377,6 +379,8 @@ class AudioManager: ObservableObject {
         let kickImpact = max(0, avgBassEnergy - kickThreshold)
         // ──────────────────────────────────────────────────────────────────
         
+        var totalSmooth: Float = 0.0
+        
         for i in 0..<bandCount {
             // 🚀 调用全新的 Mel 算法，分出来的 b1, b2 绝对丝滑、独立
             let (b1, b2) = bins(band: i, minFreq: minFreq, maxFreq: maxFreq, sr: currentSampleRate)
@@ -393,8 +397,8 @@ class AudioManager: ObservableObject {
             var redistributedBass: Float = 0.0
             if i >= 3 {
                 // 距离衰减因子：索引越靠后，鼓点分配到的冲击力越弱（从 0.18 衰减到 0.02）
-                let distanceFactor = max(0.28, 0.28 - Float(i - 3) * 0.005)
-                redistributedBass = kickImpact * distanceFactor
+//                let distanceFactor = max(0.28, 0.28 - Float(i - 3) * 0.005)
+                redistributedBass = kickImpact// * distanceFactor
             } else {
                 redistributedBass *= 0.85
             }
@@ -409,48 +413,65 @@ class AudioManager: ObservableObject {
             var smoothed: Float = 0.0
             let prev = previous[i]
             
-            if i >= 4 {
-                if triggered {
-                    // 🚀 鼓点来了：如果原本音乐的 raw 已经比 prev 还要高（人声稳定高位），那就尊重人声
-                    // 否则，才用我们的混合公式强行把柱子踢上去！
-                    let baseline = max(raw, tunnelRaw)
-                    smoothed = baseline > prev
-                    ? prev * 0.4 + baseline * 0.6  // 稍微加大一点现帧权重，让爬坡更凌厉
-                    : prev * 0.7 + baseline * 0.3 // 人声在高位时，绝对不准它触发“暴跌”，保持稳定
-                } else {
-                    // 🚀 鼓点走了（普通音乐状态）：
-                    if raw > prev {
-                        // 爬坡走常规的 attack
-                        smoothed = prev * (1.0 - attack) + raw * attack
-//                        let delta = raw - prev
-                        // 🚀【自适应 Attack 公式】：
-                        // 当 delta 很小（平缓起伏）时，attack 约等于 0.65（温柔爬坡）
-                        // 当 delta 很大（重鼓点砸下）时，attack 瞬间升至 0.88（凌厉爆破但绝不硬闪！）
-//                        let dynamicAttack = 0.65 + min(delta, 1.0) * 0.23
-                        
-//                        smoothed = prev * (1.0 - dynamicAttack) + raw * dynamicAttack
-                    } else {
-                        // 🎯 核心保护补丁：如果当前是人声持续高位（raw很大），即使 prev 很高，也不允许它触发急速下砸
-                        // 我们用一个自适应释放：如果 raw 依然维持在高位（比如 > 0.6），就用极其温柔的常规 release 维持住！
-                        if raw > 0.7 {
-                            smoothed = prev * release + raw * (1.0 - release)
-                        } else {
-                            // 只有当音乐真正进入低谷、要卸力时，才允许它快速自由落体
-                            smoothed = //prev * 0.35 + raw * 0.65
-                            prev * 0.15 + raw * 0.85
-                        }
-                    }
-                }
-            } else {
+//            if i >= 4 {
+//                if triggered {
+//                    // 🚀 鼓点来了：如果原本音乐的 raw 已经比 prev 还要高（人声稳定高位），那就尊重人声
+//                    // 否则，才用我们的混合公式强行把柱子踢上去！
+//                    let baseline = max(raw, tunnelRaw)
+//                    smoothed = baseline > prev
+//                    ? prev * 0.4 + baseline * 0.6  // 稍微加大一点现帧权重，让爬坡更凌厉
+//                    : prev * 0.7 + baseline * 0.3 // 人声在高位时，绝对不准它触发“暴跌”，保持稳定
+//                } else {
+//                    // 🚀 鼓点走了（普通音乐状态）：
+//                    if raw > prev {
+//                        // 爬坡走常规的 attack
+//                        smoothed = prev * (1.0 - attack) + raw * attack
+////                        let delta = raw - prev
+//                        // 🚀【自适应 Attack 公式】：
+//                        // 当 delta 很小（平缓起伏）时，attack 约等于 0.65（温柔爬坡）
+//                        // 当 delta 很大（重鼓点砸下）时，attack 瞬间升至 0.88（凌厉爆破但绝不硬闪！）
+////                        let dynamicAttack = 0.65 + min(delta, 1.0) * 0.23
+//
+////                        smoothed = prev * (1.0 - dynamicAttack) + raw * dynamicAttack
+//                    } else {
+//                        // 🎯 核心保护补丁：如果当前是人声持续高位（raw很大），即使 prev 很高，也不允许它触发急速下砸
+//                        // 我们用一个自适应释放：如果 raw 依然维持在高位（比如 > 0.6），就用极其温柔的常规 release 维持住！
+//                        if raw > 0.7 {
+//                            smoothed = prev * release + raw * (1.0 - release)
+//                        } else {
+//                            // 只有当音乐真正进入低谷、要卸力时，才允许它快速自由落体
+//                            smoothed = prev * 0.35 + raw * 0.65
+////                            prev * 0.15 + raw * 0.85
+//                        }
+//                    }
+//                }
+//            } else {
                 // 0 ~ 3 柱极低频走常规丝滑路线
                 smoothed = raw > prev
                 ? prev * (1.0 - attack) + raw * attack
                 : prev * release + raw * (1.0 - release)
-            }
+//            }
             
             tunnelRaw = 0
-            result[i] = smoothed
+            result[i] = smoothed// * 0.95 + prev * 0.05
+            
+//            totalSmooth += raw
         }
+        
+//        let avgSmooth = totalSmooth / Float(bandCount)
+        
+        // 对【过载系数本身】做平滑！
+//        self.smoothContrastScale = self.smoothContrastScale * 0.15 + avgSmooth * 0.85
+//        
+//        if self.smoothContrastScale > 0.90 {
+//            print("smoothContrastScale================\(smoothContrastScale)")
+//            for i in 0..<bandCount {
+//                let delta = (avgSmooth - result[i]) / avgSmooth // 偏离比例 (0.0 ~ 1.0)
+//                let suppression = //avgSmooth - result[i] > 0 ?
+//                1.0 - (/*0.63 **/ smoothContrastScale * delta) // 平滑衰减因子
+//                result[i] *= suppression * 0.72
+//            }
+//        }
         
         // ── 🎛️ 参谋长推荐：高频阻尼防爆网（26 ~ 31柱） ──────────────────
         for p in 26...31 {
@@ -463,6 +484,7 @@ class AudioManager: ObservableObject {
             
             result[p] = result[p] * currentWeight + prevBands[p] * prevWeight
         }
+        
         
         // 横向邻居平滑
         var spatialSmoothed = result
