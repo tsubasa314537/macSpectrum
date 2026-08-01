@@ -33,7 +33,7 @@ struct AlbumImageView: View {
             }
         }
         .onAppear {
-            startRotationIfNeeded()
+//            startRotationIfNeeded()
             updatePalette()
         }
         .onDisappear {

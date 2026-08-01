@@ -83,8 +83,8 @@ struct MacSpectrumApp: App {
                 }
             }) {
                 HStack {
-                    Text(player.themeType == "black" ? "主题: 酷黑" : "主题: 灰白")
-                    Image(systemName: player.themeType == "black" ? "moon.fill" : "sun.max.fill")
+                    Text(player.themeType == "black" ? "||| 魔幻光柱" : "OOO 动感圈圈")
+//                    Image(systemName: player.themeType == "black" ? "|||" : "OOO")
                 }
             }
             

@@ -181,25 +181,25 @@ struct MainPlayerView: View {
         .background(
             Group {
                 if !player.isAutopilotMode {
-                    if player.themeType == "black" {
-                        ZStack {
-                            Rectangle().fill(Color.black.opacity(0.2))
-                            Rectangle().fill(palette.bgPalette).opacity(0.15)
-                        }
-                        .ignoresSafeArea(.container, edges: .top)
-                    } else {
-                        ZStack {
-                            Color(red: 0.85, green: 0.85, blue: 0.85)
-                            if let img = player.nowAlbum {
-                                Image(nsImage: img)
-                                    .resizable()
-                                    .blur(radius: 30, opaque: true)
-                                    .opacity(0.2)
-                                    .scaledToFill()
-                            }
-                        }
-                        .clipped()
+//                    if player.themeType == "black" {
+                    ZStack {
+                        Rectangle().fill(Color.black.opacity(0.2))
+                        Rectangle().fill(palette.bgPalette).opacity(0.15)
                     }
+                    .ignoresSafeArea(.container, edges: .top)
+//                    } else {
+//                        ZStack {
+//                            Color(red: 0.85, green: 0.85, blue: 0.85)
+//                            if let img = player.nowAlbum {
+//                                Image(nsImage: img)
+//                                    .resizable()
+//                                    .blur(radius: 30, opaque: true)
+//                                    .opacity(0.2)
+//                                    .scaledToFill()
+//                            }
+//                        }
+//                        .clipped()
+//                    }
                 }
             }
         )
@@ -268,7 +268,8 @@ struct MainPlayerView: View {
         if nowPlaying {
             return palette.bgPalette
         } else {
-            return player.themeType == "black" ? Color.white : Color.black
+            return Color.white
+//            return player.themeType == "black" ? Color.white : Color.black
         }
     }
     
@@ -296,11 +297,13 @@ struct MainPlayerView: View {
                 VStack(spacing: 2) {
                     Text(parts.count >= 2 ? parts[1].trimmingCharacters(in: .whitespaces) : song.title)
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundColor(player.themeType == "black" ? .white : .black)
+//                        .foregroundColor(player.themeType == "black" ? .white : .black)
+                        .foregroundColor(.white)
                         .lineLimit(1)
                     Text(parts.count >= 2 ? parts[0].trimmingCharacters(in: .whitespaces) : "未知歌手")
                         .font(.system(size: 14))
-                        .foregroundColor(player.themeType == "black" ? Color.white.opacity(0.5) : Color.black.opacity(0.5))
+//                        .foregroundColor(player.themeType == "black" ? Color.white.opacity(0.5) : Color.black.opacity(0.5))
+                        .foregroundColor(Color.white.opacity(0.5))
                 }
             }
             Spacer()
@@ -316,7 +319,9 @@ struct MainPlayerView: View {
     private var themeSelector: some View {
         HStack(spacing: 15) {
             Spacer()
-            Text("酷黑").foregroundColor(player.themeType == "black" ? .white : .black)
+            Text("魔幻光柱")
+                .foregroundColor(.white)
+            //.foregroundColor(player.themeType == "black" ? .white : .black)
             
             Toggle("", isOn: $player.standardTheme)
                 .labelsHidden()
@@ -326,7 +331,9 @@ struct MainPlayerView: View {
                     player.themeType = select ? "white" : "black"
                 }
             
-            Text("灰白").foregroundColor(player.themeType == "white" ? .black : .white)
+            Text("动感圈圈")
+                .foregroundColor(.white)
+            //.foregroundColor(player.themeType == "white" ? .black : .white)
             Spacer()
         }
         .padding(.vertical, 8)

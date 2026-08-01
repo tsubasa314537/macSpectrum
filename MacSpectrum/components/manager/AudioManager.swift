@@ -446,7 +446,8 @@ class AudioManager: ObservableObject {
                     
                     // 💥 更 Aggressive 的非线性打折（平方曲线）：
                     // 离均值越远的弱柱子，衰减越呈抛物线下降，把底座彻底拉低！
-                    let suppression = 1.0 - (0.55 * excessFactor * ratio * ratio)
+                    // original: 0.55
+                    let suppression = 1.0 - (0.35 * excessFactor * ratio * ratio)
                     result[i] *= suppression
                 }
                 

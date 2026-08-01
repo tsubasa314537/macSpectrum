@@ -92,6 +92,7 @@ struct SpectrumAnalyser: View {
                 maxH: maxHeight,
                 minH: minHeight
             )
+            
         }
         
 

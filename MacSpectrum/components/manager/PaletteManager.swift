@@ -109,47 +109,47 @@ class PaletteManager: ObservableObject {
         var targetPreset = SpectrumPalette.all.first(where: { $0.name == "Sunset" }) ?? SpectrumPalette.all[0]
         
         // 🎯 密网交织：全量匹配您的所有 8 套艺术主题！
-        if themeType == "black" {
-            if h >= 0.0 && h < 0.04 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "Candy" }) ?? targetPreset
-            } else if h >= 0.04 && h < 0.11 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "Sunset" }) ?? targetPreset
-            } else if h >= 0.11 && h < 0.20 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "Gold" }) ?? targetPreset
-            } else if h >= 0.20 && h < 0.40 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "Mint" }) ?? targetPreset
-            } else if h >= 0.40 && h < 0.58 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "Aurora" }) ?? targetPreset
-            } else if h >= 0.58 && h < 0.67 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "Glacier" }) ?? targetPreset
-            } else if h >= 0.67 && h < 0.76 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "AquaCyan" }) ?? targetPreset
-            } else if h >= 0.76 && h < 0.88 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "Neon" }) ?? targetPreset
-            } else {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "Candy" }) ?? targetPreset
-            }
+//        if themeType == "black" {
+        if h >= 0.0 && h < 0.04 {
+            targetPreset = SpectrumPalette.all.first(where: { $0.name == "Candy" }) ?? targetPreset
+        } else if h >= 0.04 && h < 0.11 {
+            targetPreset = SpectrumPalette.all.first(where: { $0.name == "Sunset" }) ?? targetPreset
+        } else if h >= 0.11 && h < 0.20 {
+            targetPreset = SpectrumPalette.all.first(where: { $0.name == "Gold" }) ?? targetPreset
+        } else if h >= 0.20 && h < 0.40 {
+            targetPreset = SpectrumPalette.all.first(where: { $0.name == "Mint" }) ?? targetPreset
+        } else if h >= 0.40 && h < 0.58 {
+            targetPreset = SpectrumPalette.all.first(where: { $0.name == "Aurora" }) ?? targetPreset
+        } else if h >= 0.58 && h < 0.67 {
+            targetPreset = SpectrumPalette.all.first(where: { $0.name == "Glacier" }) ?? targetPreset
+        } else if h >= 0.67 && h < 0.76 {
+            targetPreset = SpectrumPalette.all.first(where: { $0.name == "AquaCyan" }) ?? targetPreset
+        } else if h >= 0.76 && h < 0.88 {
+            targetPreset = SpectrumPalette.all.first(where: { $0.name == "Neon" }) ?? targetPreset
         } else {
-            if h >= 0.0 && h < 0.04 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkCandy" }) ?? targetPreset
-            } else if h >= 0.04 && h < 0.11 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkGold" }) ?? targetPreset
-            } else if h >= 0.11 && h < 0.20 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkMint" }) ?? targetPreset
-            } else if h >= 0.20 && h < 0.40 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkMint" }) ?? targetPreset
-            } else if h >= 0.40 && h < 0.58 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkAurora" }) ?? targetPreset
-            } else if h >= 0.58 && h < 0.67 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkGlacier" }) ?? targetPreset
-            } else if h >= 0.67 && h < 0.76 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkAquaCyan" }) ?? targetPreset
-            } else if h >= 0.76 && h < 0.88 {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkNeon" }) ?? targetPreset
-            } else {
-                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkCandy" }) ?? targetPreset
-            }
+            targetPreset = SpectrumPalette.all.first(where: { $0.name == "Candy" }) ?? targetPreset
         }
+//        } else {
+//            if h >= 0.0 && h < 0.04 {
+//                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkCandy" }) ?? targetPreset
+//            } else if h >= 0.04 && h < 0.11 {
+//                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkGold" }) ?? targetPreset
+//            } else if h >= 0.11 && h < 0.20 {
+//                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkMint" }) ?? targetPreset
+//            } else if h >= 0.20 && h < 0.40 {
+//                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkMint" }) ?? targetPreset
+//            } else if h >= 0.40 && h < 0.58 {
+//                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkAurora" }) ?? targetPreset
+//            } else if h >= 0.58 && h < 0.67 {
+//                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkGlacier" }) ?? targetPreset
+//            } else if h >= 0.67 && h < 0.76 {
+//                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkAquaCyan" }) ?? targetPreset
+//            } else if h >= 0.76 && h < 0.88 {
+//                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkNeon" }) ?? targetPreset
+//            } else {
+//                targetPreset = SpectrumPalette.all.first(where: { $0.name == "DarkCandy" }) ?? targetPreset
+//            }
+//        }
         
         // 2. 注入血肉：低频（中心侧）死死咬合住真实的专辑色
         let baseLow = newColor

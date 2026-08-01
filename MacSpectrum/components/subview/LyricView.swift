@@ -21,7 +21,8 @@ struct LyricView: View {
                     Spacer()
                     Text(player.currentSong?.title ?? "未知曲目")
                         .font(.system(size: 22, weight: .bold, design: .rounded))
-                        .foregroundColor(themeType == "black" ? .white : .black)
+//                        .foregroundColor(themeType == "black" ? .white : .black)
+                        .foregroundColor(.white)
 //                    Text(player.currentSong?.artist ?? "未知歌手")
 //                        .font(.system(size: 15))
 //                        .foregroundColor(.gray)
@@ -44,7 +45,8 @@ struct LyricView: View {
                                     .font(.system(size: isCurrent ? 20 : 15, weight: isCurrent ? .bold : .medium, design: .rounded))
                                 // ✨ 极其惊艳的高光联动：
                                 // 唱到的那一行，直接亮起当前歌曲提取出来的专辑灵魂色！没唱到的根据主题黑白变淡！
-                                    .foregroundColor(isCurrent ? palette.bgPalette : (themeType == "black" ? .white.opacity(0.4) : .black.opacity(0.4)))
+                                    .foregroundColor(isCurrent ? palette.bgPalette : .white
+                                        /*(themeType == "black" ? .white.opacity(0.4) : .black.opacity(0.4))*/)
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 20)
                                     .scaleEffect(isCurrent ? 1.05 : 1.0) // 轻微膨胀呼吸感
