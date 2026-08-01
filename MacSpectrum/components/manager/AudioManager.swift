@@ -413,68 +413,55 @@ class AudioManager: ObservableObject {
             var smoothed: Float = 0.0
             let prev = previous[i]
             
-//            if i >= 4 {
-//                if triggered {
-//                    // 🚀 鼓点来了：如果原本音乐的 raw 已经比 prev 还要高（人声稳定高位），那就尊重人声
-//                    // 否则，才用我们的混合公式强行把柱子踢上去！
-//                    let baseline = max(raw, tunnelRaw)
-//                    smoothed = baseline > prev
-//                    ? prev * 0.4 + baseline * 0.6  // 稍微加大一点现帧权重，让爬坡更凌厉
-//                    : prev * 0.7 + baseline * 0.3 // 人声在高位时，绝对不准它触发“暴跌”，保持稳定
-//                } else {
-//                    // 🚀 鼓点走了（普通音乐状态）：
-//                    if raw > prev {
-//                        // 爬坡走常规的 attack
-//                        smoothed = prev * (1.0 - attack) + raw * attack
-////                        let delta = raw - prev
-//                        // 🚀【自适应 Attack 公式】：
-//                        // 当 delta 很小（平缓起伏）时，attack 约等于 0.65（温柔爬坡）
-//                        // 当 delta 很大（重鼓点砸下）时，attack 瞬间升至 0.88（凌厉爆破但绝不硬闪！）
-////                        let dynamicAttack = 0.65 + min(delta, 1.0) * 0.23
-//
-////                        smoothed = prev * (1.0 - dynamicAttack) + raw * dynamicAttack
-//                    } else {
-//                        // 🎯 核心保护补丁：如果当前是人声持续高位（raw很大），即使 prev 很高，也不允许它触发急速下砸
-//                        // 我们用一个自适应释放：如果 raw 依然维持在高位（比如 > 0.6），就用极其温柔的常规 release 维持住！
-//                        if raw > 0.7 {
-//                            smoothed = prev * release + raw * (1.0 - release)
-//                        } else {
-//                            // 只有当音乐真正进入低谷、要卸力时，才允许它快速自由落体
-//                            smoothed = prev * 0.35 + raw * 0.65
-////                            prev * 0.15 + raw * 0.85
-//                        }
-//                    }
-//                }
-//            } else {
-                // 0 ~ 3 柱极低频走常规丝滑路线
-                smoothed = raw > prev
-                ? prev * (1.0 - attack) + raw * attack
-                : prev * release + raw * (1.0 - release)
-//            }
+            smoothed = raw > prev
+            ? prev * (1.0 - attack) + raw * attack
+            : prev * release + raw * (1.0 - release)
             
             tunnelRaw = 0
             result[i] = smoothed// * 0.95 + prev * 0.05
             
-//            totalSmooth += raw
+            totalSmooth += raw
         }
         
-//        let avgSmooth = totalSmooth / Float(bandCount)
-        
+        let avgSmooth = totalSmooth / Float(bandCount)
         // 对【过载系数本身】做平滑！
-//        self.smoothContrastScale = self.smoothContrastScale * 0.15 + avgSmooth * 0.85
-//        
-//        if self.smoothContrastScale > 0.90 {
+        self.smoothContrastScale = self.smoothContrastScale * 0.85 + avgSmooth * 0.15
+        
+        // 1. 动态阈值：当全场均值超过 0.65 时，开启“隐形高动态拉伸”
+        let isOverloaded = self.smoothContrastScale > 0.65
+        
+        if isOverloaded {
 //            print("smoothContrastScale================\(smoothContrastScale)")
-//            for i in 0..<bandCount {
-//                let delta = (avgSmooth - result[i]) / avgSmooth // 偏离比例 (0.0 ~ 1.0)
-//                let suppression = //avgSmooth - result[i] > 0 ?
-//                1.0 - (/*0.63 **/ smoothContrastScale * delta) // 平滑衰减因子
-//                result[i] *= suppression * 0.72
-//            }
-//        }
+            // 算出一个激进的压制强度 factor (0.0 ~ 1.0)
+            // 均值越高，因子越大，压制越狠
+            let excessFactor = min(1.0, (self.smoothContrastScale - 0.65) / 0.25)
+            
+            for i in 0..<bandCount {
+                let val = result[i]
+                
+                // 🎯 核心逻辑：偏离度计算（越低于均值的柱子，越需要被压制）
+                if val < self.smoothContrastScale {
+                    // 计算低于均值的比例 (0.0 ~ 1.0)
+                    let ratio = (self.smoothContrastScale - val) / self.smoothContrastScale
+                    
+                    // 💥 更 Aggressive 的非线性打折（平方曲线）：
+                    // 离均值越远的弱柱子，衰减越呈抛物线下降，把底座彻底拉低！
+                    let suppression = 1.0 - (0.55 * excessFactor * ratio * ratio)
+                    result[i] *= suppression
+                }
+                
+                // 🌟 无论压不压，统一与上一帧做 5% 惯性平滑（保持波浪连绵感）
+                result[i] = result[i] * 0.95 + previous[i] * 0.05
+            }
+        } else {
+            // 均值不大时，保持最纯粹的自然状态 + 5% 时域牵引
+            for i in 0..<bandCount {
+                result[i] = result[i] * 0.95 + previous[i] * 0.05
+            }
+        }
         
         // ── 🎛️ 参谋长推荐：高频阻尼防爆网（26 ~ 31柱） ──────────────────
-        for p in 26...31 {
+        for p in 26...bandCount - 1 {
             // 🎯 计算当前柱子距离最远端的深度
             // p=26 时 alpha 约 0.70（给乐器留点脆劲）
             // p=31 时 alpha 约 0.45（给极端高频齿音加上重沙包，允许它跳，但必须极其丝滑）
@@ -489,7 +476,7 @@ class AudioManager: ObservableObject {
         // 横向邻居平滑
         var spatialSmoothed = result
         for i in 1..<(bandCount - 1) {
-            spatialSmoothed[i] = result[i-1] * 0.15 + result[i] * 0.7 + result[i+1] * 0.15
+            spatialSmoothed[i] = result[i-1] * 0.1 + result[i] * 0.8 + result[i+1] * 0.1
         }
         spatialSmoothed[0] = result[0] * 0.7 + result[1] * 0.3
         spatialSmoothed[bandCount - 1] = result[bandCount - 1] * 0.3 + result[bandCount - 2] * 0.7
