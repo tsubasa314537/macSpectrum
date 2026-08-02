@@ -32,7 +32,7 @@ class PlayerManager: ObservableObject {
     private var shuffledOrder: [Int] = []
     private var shufflePointer: Int = 0
     
-    var beatDetector = OfflineAudioOnsetDetector()
+//    var beatDetector = OfflineAudioOnsetDetector()
     
     @Published var beats: [TimeInterval] = []
     
@@ -426,13 +426,13 @@ class PlayerManager: ObservableObject {
     func play(song: Song) {
         stop()
         
-        beatDetector.analyzeSongFile(fileURL: song.url){ [weak self] kicks in
-            self?.beats = kicks
-            
-            if let currentBeats = self?.beats, let pNode = self?.playerNode {
-                self?.spectrum.setDrumMap(currentBeats,  for: pNode)
-            }
-        }
+//        beatDetector.analyzeSongFile(fileURL: song.url){ [weak self] kicks in
+//            self?.beats = kicks
+//            
+//            if let currentBeats = self?.beats, let pNode = self?.playerNode {
+//                self?.spectrum.setDrumMap(currentBeats,  for: pNode)
+//            }
+//        }
         
         do {
             audioFile = try AVAudioFile(forReading: song.url)
