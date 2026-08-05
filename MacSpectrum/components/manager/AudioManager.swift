@@ -192,50 +192,50 @@ class AudioManager: ObservableObject {
         let prevR = rightMagnitudes
         
         // ── 🚀 接入实时时域暴力大鼓雷达（直接利用 256 滑动窗口） ──────────────────
-        let triggerSamplesSize = 128
-        var isRealtimeKickTriggered = false
+//        let triggerSamplesSize = 256
+//        var isRealtimeKickTriggered = false
         
-        if frameCount >= triggerSamplesSize {
-            // 1. 抓取这 256 个时域点，混合左右声道
-            var triggerSamples = [Float](repeating: 0, count: triggerSamplesSize)
-            let startOffset = frameCount - triggerSamplesSize
-            for i in 0..<triggerSamplesSize {
-                let sampleL = data[0][startOffset + i]
-                let sampleR = channelCount >= 2 ? data[1][startOffset + i] : sampleL
-                triggerSamples[i] = max(abs(sampleL), abs(sampleR)) // 🎯 暴力取绝对值最大值
-            }
-            
-            // 2. 用硬件加速算时域 RMS 物理分贝
-            var rmsValue: Float = 0.0
-            vDSP_rmsqv(triggerSamples, 1, &rmsValue, vDSP_Length(triggerSamplesSize))
-            let currentDB = 20.0 * log10(max(rmsValue, 1e-6))
-            
-            // 3. 实时绝对值判定（-5.0dB 绝对真理，配合 80ms 冷却去噪）
-//            let deltaDB = currentDB - previousRealtimeDB
-            
-            // 🎯 老爷子，这里就是您刚才测出来的黄金手感参数！
-            if currentDB >= -12.0/* && deltaDB > 0.0*/ {
-                //                print("***********IN***************")
-                // 获取当前真实的播放时间
-                var currentSeconds: Double = 0.0
-                if let node = playerNode, node.isPlaying,
-                   let nodeTime = node.lastRenderTime,
-                   let playerTime = node.playerTime(forNodeTime: nodeTime) {
-                    currentSeconds = Double(playerTime.sampleTime) / playerTime.sampleRate
-                }
-                
-                // 冷却时间判定
-                if currentSeconds - lastRealtimeTriggerTime >= realtimeCooldown {
-                    isRealtimeKickTriggered = true
-                    lastRealtimeTriggerTime = currentSeconds
-                }
-            }
-//            previousRealtimeDB = currentDB
-            
-            // 4. 兼容保留原本的 Onset 状态机（防止 UI 的其他联动断掉）
-            let feature = computeTriggerFeature(samples: triggerSamples)
-            updateOnsetEnvelope(feature: feature)
-        }
+//        if frameCount >= triggerSamplesSize {
+//            // 1. 抓取这 256 个时域点，混合左右声道
+//            var triggerSamples = [Float](repeating: 0, count: triggerSamplesSize)
+//            let startOffset = frameCount - triggerSamplesSize
+//            for i in 0..<triggerSamplesSize {
+//                let sampleL = data[0][startOffset + i]
+//                let sampleR = channelCount >= 2 ? data[1][startOffset + i] : sampleL
+//                triggerSamples[i] = max(abs(sampleL), abs(sampleR)) // 🎯 暴力取绝对值最大值
+//            }
+//            
+//            // 2. 用硬件加速算时域 RMS 物理分贝
+//            var rmsValue: Float = 0.0
+//            vDSP_rmsqv(triggerSamples, 1, &rmsValue, vDSP_Length(triggerSamplesSize))
+//            let currentDB = 20.0 * log10(max(rmsValue, 1e-6))
+//            
+//            // 3. 实时绝对值判定（-5.0dB 绝对真理，配合 80ms 冷却去噪）
+////            let deltaDB = currentDB - previousRealtimeDB
+//            
+//            // 🎯 老爷子，这里就是您刚才测出来的黄金手感参数！
+//            if currentDB >= -10.0/* && deltaDB > 0.0*/ {
+//                //                print("***********IN***************")
+//                // 获取当前真实的播放时间
+//                var currentSeconds: Double = 0.0
+//                if let node = playerNode, node.isPlaying,
+//                   let nodeTime = node.lastRenderTime,
+//                   let playerTime = node.playerTime(forNodeTime: nodeTime) {
+//                    currentSeconds = Double(playerTime.sampleTime) / playerTime.sampleRate
+//                }
+//                
+//                // 冷却时间判定
+//                if currentSeconds - lastRealtimeTriggerTime >= realtimeCooldown {
+//                    isRealtimeKickTriggered = true
+//                    lastRealtimeTriggerTime = currentSeconds
+//                }
+//            }
+////            previousRealtimeDB = currentDB
+//            
+//            // 4. 兼容保留原本的 Onset 状态机（防止 UI 的其他联动断掉）
+//            let feature = computeTriggerFeature(samples: triggerSamples)
+//            updateOnsetEnvelope(feature: feature)
+//        }
         
         // 📥 【双剑合一】：只要离线子弹触发了，或者我们实时暴力雷达抓到了，都算触发！
 //        let offlineTriggered = triggered()
@@ -244,14 +244,14 @@ class AudioManager: ObservableObject {
         let rawBandsL = computeBands(
             rawMags: magsL,
             previous: prevL,
-            peak: &peakL,
-            triggered: isRealtimeKickTriggered
+            peak: &peakL
+//            triggered: isRealtimeKickTriggered
         )
         let rawBandsR = computeBands(
             rawMags: magsR,
             previous: prevR,
-            peak: &peakR,
-            triggered: isRealtimeKickTriggered
+            peak: &peakR
+//            triggered: isRealtimeKickTriggered
         )
         
         let currentTrigger = self.triggerValue
@@ -355,7 +355,7 @@ class AudioManager: ObservableObject {
 //    }
     
     // MARK: - 频段计算
-    private func computeBands(rawMags: [Float], previous: [Float], peak: inout Float, triggered: Bool) -> [Float] {
+    private func computeBands(rawMags: [Float], previous: [Float], peak: inout Float/*, triggered: Bool*/) -> [Float] {
         let minFreq: Float = 45
         let maxFreq: Float = 5500
         
@@ -399,8 +399,8 @@ class AudioManager: ObservableObject {
                 // 距离衰减因子：索引越靠后，鼓点分配到的冲击力越弱（从 0.18 衰减到 0.02）
 //                let distanceFactor = max(0.28, 0.28 - Float(i - 3) * 0.005)
                 redistributedBass = kickImpact// * distanceFactor
-            } else {
-                redistributedBass *= 0.85
+//            } else {
+//                redistributedBass *= 0.85
             }
             
             // 融合原生能量与鼓点冲击，严格限制在 0.0 ~ 1.0（绝不顶头！）
@@ -418,14 +418,14 @@ class AudioManager: ObservableObject {
             : prev * release + raw * (1.0 - release)
             
             tunnelRaw = 0
-            result[i] = smoothed// * 0.95 + prev * 0.05
+            result[i] = smoothed
             
             totalSmooth += raw
         }
         
         let avgSmooth = totalSmooth / Float(bandCount)
         // 对【过载系数本身】做平滑！
-        self.smoothContrastScale = self.smoothContrastScale * 0.85 + avgSmooth * 0.15
+        self.smoothContrastScale = avgSmooth//self.smoothContrastScale * 0.85 + avgSmooth * 0.15
         
         // 1. 动态阈值：当全场均值超过 0.65 时，开启“隐形高动态拉伸”
 //        let isOverloaded = self.smoothContrastScale > 0.65
@@ -451,7 +451,7 @@ class AudioManager: ObservableObject {
                 }
                 
                 // 🌟 无论压不压，统一与上一帧做 5% 惯性平滑（保持波浪连绵感）
-                result[i] = result[i] * 0.9 + previous[i] * 0.1
+                result[i] = result[i] * 0.98 + previous[i] * 0.02
             }
         } else {
             // 均值不大时，保持最纯粹的自然状态 + 5% 时域牵引
