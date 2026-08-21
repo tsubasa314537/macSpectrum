@@ -71,13 +71,11 @@ extension SpectrumPalette {
         // 2. 新增：电光青蓝（浅蓝、高亮度、极具穿透力，专门对付暗黑和灰白背景！）
         SpectrumPalette(name: "AquaCyan", low: Color(hue: 0.52, saturation: 0.90, brightness: 0.95),
                         high: Color(hue: 0.48, saturation: 0.75, brightness: 1.0)),
-        SpectrumPalette(name: "AquaCyan", low: Color(hue: 0.52, saturation: 0.90, brightness: 0.95),
-                        high: Color(hue: 0.48, saturation: 0.75, brightness: 0.75)),
         // 3. 新增：冰晶透蓝（极高明度的冷调浅蓝，在白底或黑底下都像水晶一样亮眼）
         SpectrumPalette(name: "Glacier",  low: Color(hue: 0.55, saturation: 0.70, brightness: 1.0),
                         high: Color(hue: 0.62, saturation: 0.50, brightness: 1.0)),
-        SpectrumPalette(name: "DarkGlacier",  low: Color(hue: 0.55, saturation: 0.70, brightness: 1.0),
-                        high: Color(hue: 0.62, saturation: 0.50, brightness: 0.6)),
+//        SpectrumPalette(name: "DarkGlacier",  low: Color(hue: 0.55, saturation: 0.70, brightness: 1.0),
+//                        high: Color(hue: 0.62, saturation: 0.50, brightness: 0.6)),
         // ===========================================================
         // 🌋 熔岩红色家族拆分（彻底解决太深太暗的问题）
         // ===========================================================
@@ -88,16 +86,16 @@ extension SpectrumPalette {
         // 2. 新增：炽热岩浆（往橙黄色偏置，明度拉满，绝对不会暗淡！）
         SpectrumPalette(name: "Magma",    low: Color(hue: 0.04, saturation: 1.0, brightness: 1.0),
                         high: Color(hue: 0.12, saturation: 0.90, brightness: 1.0)),
-        SpectrumPalette(name: "DarkMagma",    low: Color(hue: 0.04, saturation: 1.0, brightness: 1.0),
-                        high: Color(hue: 0.12, saturation: 0.90, brightness: 0.75)),
+//        SpectrumPalette(name: "DarkMagma",    low: Color(hue: 0.04, saturation: 1.0, brightness: 1.0),
+//                        high: Color(hue: 0.12, saturation: 0.90, brightness: 0.75)),
         // ===========================================================
         // 🔮 梦幻糖果重铸（彻底告别蓝色，拥抱绝美浅紫！）
         // ===========================================================
         // 彻底清洗 HSL 参数，将低频锁在优雅的浅紫/玫紫（0.78），高频流向粉紫（0.84），流光溢彩！
         SpectrumPalette(name: "Candy",    low: Color(hue: 0.78, saturation: 0.75, brightness: 1.0),
                         high: Color(hue: 0.84, saturation: 0.65, brightness: 1.0)),
-        SpectrumPalette(name: "DarkCandy",    low: Color(hue: 0.78, saturation: 0.75, brightness: 1.0),
-                        high: Color(hue: 0.84, saturation: 0.65, brightness: 0.75)),
+//        SpectrumPalette(name: "DarkCandy",    low: Color(hue: 0.78, saturation: 0.75, brightness: 1.0),
+//                        high: Color(hue: 0.84, saturation: 0.65, brightness: 0.75)),
         // ===========================================================
         // 🎨 其余经典艺术保留骨架
         // ===========================================================
@@ -107,20 +105,20 @@ extension SpectrumPalette {
 //                        high: Color(hue: 0.16, saturation: 0.9, brightness: 0.75)),
         SpectrumPalette(name: "Aurora",   low: Color(hue: 0.42, saturation: 0.9, brightness: 0.85),
                         high: Color(hue: 0.55, saturation: 0.8, brightness: 1.0)),
-        SpectrumPalette(name: "DarkAurora",   low: Color(hue: 0.42, saturation: 0.9, brightness: 0.85),
-                        high: Color(hue: 0.55, saturation: 0.8, brightness: 0.5)),
+//        SpectrumPalette(name: "DarkAurora",   low: Color(hue: 0.42, saturation: 0.9, brightness: 0.85),
+//                        high: Color(hue: 0.55, saturation: 0.8, brightness: 0.5)),
         SpectrumPalette(name: "Neon",     low: Color(hue: 0.85, saturation: 1.0, brightness: 1.0),
                         high: Color(hue: 0.95, saturation: 0.9, brightness: 1.0)),
-        SpectrumPalette(name: "DarkNeon",     low: Color(hue: 0.85, saturation: 1.0, brightness: 1.0),
-                        high: Color(hue: 0.95, saturation: 0.9, brightness: 0.75)),
+//        SpectrumPalette(name: "DarkNeon",     low: Color(hue: 0.85, saturation: 1.0, brightness: 1.0),
+//                        high: Color(hue: 0.95, saturation: 0.9, brightness: 0.75)),
         SpectrumPalette(name: "Mint",     low: Color(hue: 0.45, saturation: 0.7, brightness: 0.9),
                         high: Color(hue: 0.33, saturation: 0.6, brightness: 1.0)),
-        SpectrumPalette(name: "DarkMint",     low: Color(hue: 0.45, saturation: 0.7, brightness: 0.9),
-                        high: Color(hue: 0.33, saturation: 0.6, brightness: 0.65)),
+//        SpectrumPalette(name: "DarkMint",     low: Color(hue: 0.45, saturation: 0.7, brightness: 0.9),
+//                        high: Color(hue: 0.33, saturation: 0.6, brightness: 0.65)),
         SpectrumPalette(name: "Gold",     low: Color(hue: 0.13, saturation: 1.0, brightness: 0.9),
                         high: Color(hue: 0.18, saturation: 0.85, brightness: 1.0)),
-        SpectrumPalette(name: "DarkGold",     low: Color(hue: 0.13, saturation: 1.0, brightness: 0.9),
-                        high: Color(hue: 29 / 360 , saturation: 0.81, brightness: 0.93))
+//        SpectrumPalette(name: "DarkGold",     low: Color(hue: 0.13, saturation: 1.0, brightness: 0.9),
+//                        high: Color(hue: 29 / 360 , saturation: 0.81, brightness: 0.93))
     ]
 }
 

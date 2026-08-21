@@ -107,6 +107,9 @@ struct CompositeEnergyBar: View {
                     .frame(width: bellyWidth * 0.8, height: ellipseCalculatedHeight)
             }
             .padding(.top, baseRectHeight / 2.0)
+//            .shadow(color: baseColor.opacity(0.8), radius: 4, x: 0, y: 0)
+            
+            
             // Layer 3: 最底部的矩形微型底座
             Rectangle()
                 .frame(width: dynamicNeedleWidth * 1.5, height: baseRectHeight)

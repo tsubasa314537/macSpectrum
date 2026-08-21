@@ -63,8 +63,8 @@ struct MainPlayerView: View {
                         }
                         
                         Divider()
-                        themeSelector
-                        Divider()
+//                        themeSelector
+//                        Divider()
                         
                         SpectrumAnalyser(
                             audio: player.spectrum,
@@ -125,12 +125,26 @@ struct MainPlayerView: View {
                     case 9: // Cmd + V
                         if modifiers == .command {
                             player.isAutopilotMode.toggle()
+                            if !player.isAutopilotMode {
+                                player.themeType = "black"
+                                player.standardTheme = true
+                            } else {
+                                player.themeType = "white"
+                                player.standardTheme = false
+                            }
                             return nil
                         }
                         return event
                     case 17: // Cmd + T
-                        if !player.isAutopilotMode && modifiers == .command {
-                            player.standardTheme.toggle()
+                        if /*!player.isAutopilotMode && */modifiers == .command {
+                            if player.themeType == "black" {
+                                player.themeType = "white"
+                                player.standardTheme = false
+                            } else {
+                                player.themeType = "black"
+                                player.standardTheme = true
+                            }
+//                            player.standardTheme.toggle()
                             return nil
                         }
                         return event
