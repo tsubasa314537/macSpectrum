@@ -76,10 +76,10 @@ struct MacSpectrumApp: App {
             Button(action: {
                 if player.themeType == "black" {
                     player.themeType = "white"
-                    player.standardTheme = true
+                    player.standardTheme = false
                 } else {
                     player.themeType = "black"
-                    player.standardTheme = false
+                    player.standardTheme = true
                 }
             }) {
                 HStack {
