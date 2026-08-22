@@ -75,15 +75,15 @@ struct SpectrumAnalyser: View {
             // 将自适应模糊挂载在最下面，并且跟随 value（或者高度）同步丝滑渐变！
                 .blur(radius: blurRadius)
 //                .blur(radius: 1.5, opaque: false)
-            //            .animation(.interactiveSpring(response: 0.15, dampingFraction: 0.7, blendDuration: 0), value: value)
-                .animation(
-                    .spring(
-                        response: 0.15,
-                        dampingFraction: 1.0,
-                        blendDuration: 0
-                    ),
-                    value: value
-                )
+                .animation(.interactiveSpring(response: 0.15, dampingFraction: 0.7, blendDuration: 0), value: value)
+//                .animation(
+//                    .spring(
+//                        response: 0.15,
+//                        dampingFraction: 1.0,
+//                        blendDuration: 0
+//                    ),
+//                    value: value
+//                )
         } else {
             CompositeEnergyBar(
                 height: height,

@@ -362,21 +362,21 @@ class AudioManager: ObservableObject {
         peak *= peakDecay
         
         // ── 🥁 1. 预计算低频（0, 1, 2）的平均鼓点爆发力 ──────────────────────────
-//        var bassEnergySum: Float = 0.0
-//        for i in 0..<3 {
-//            let (b1, b2) = bins(band: i, minFreq: minFreq, maxFreq: maxFreq, sr: currentSampleRate)
-//            let energy = computeEnergy(from: b1, to: b2, in: rawMags)
-//            let norm = energy / max(peak, 1e-10)
-//            let dB = log2(max(norm, 1e-10)) * 3.0103
-//            let mapped = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
-//            bassEnergySum += min(max(mapped, 0), 1)
-//        }
+        var bassEnergySum: Float = 0.0
+        for i in 0..<3 {
+            let (b1, b2) = bins(band: i, minFreq: minFreq, maxFreq: maxFreq, sr: currentSampleRate)
+            let energy = computeEnergy(from: b1, to: b2, in: rawMags)
+            let norm = energy / max(peak, 1e-10)
+            let dB = log2(max(norm, 1e-10)) * 3.0103
+            let mapped = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
+            bassEnergySum += min(max(mapped, 0), 1)
+        }
         
-//        let avgBassEnergy = bassEnergySum / 3.0
+        let avgBassEnergy = bassEnergySum / 3.0
         
         // 设置低频触发门槛：只有低频能量高于 0.35 时，才触发中高频联动抖动
-//        let kickThreshold: Float = 0.65
-//        let kickImpact = max(0, avgBassEnergy - kickThreshold)
+        let kickThreshold: Float = 0.65
+        let kickImpact = max(0, avgBassEnergy - kickThreshold)
         // ──────────────────────────────────────────────────────────────────
         
         //        var totalSmooth: Float = 0.0
@@ -394,17 +394,17 @@ class AudioManager: ObservableObject {
             let mapped     = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
             
             // ── 🥁 2. 将鼓点能量衰减分发给中高频 ─────────────────────────────
-//            var redistributedBass: Float = 0.0
-//            if i >= 3 {
+            var redistributedBass: Float = 0.0
+            if i >= 3 {
                 //                 距离衰减因子：索引越靠后，鼓点分配到的冲击力越弱（从 0.18 衰减到 0.02）
                 //                let distanceFactor = max(0.28, 0.28 - Float(i - 3) * 0.005)
-//                redistributedBass = kickImpact// * distanceFactor
+                redistributedBass = kickImpact// * distanceFactor
 //            } else {
 //                redistributedBass *= 0.85
-//            }
+            }
             
             // 融合原生能量与鼓点冲击，严格限制在 0.0 ~ 1.0（绝不顶头！）
-            let raw = mapped// * 0.90 + redistributedBass * 0.85 //  min(max(mapped + redistributedBass, 0), 1)
+            let raw = i >= 3 ? mapped * 0.90 + redistributedBass * 0.85 : mapped//  min(max(mapped + redistributedBass, 0), 1)
             // ──────────────────────────────────────────────────────────────────
             
             // 双声道共享此 raw 值，取的是这一帧的两个声道谁最大
@@ -419,7 +419,7 @@ class AudioManager: ObservableObject {
             
             tunnelRaw = 0
             result[i] = smoothed
-            result[i] = result[i] * 0.95 + previous[i] * 0.05
+//            result[i] = result[i] * 0.95 + previous[i] * 0.05
             //            totalSmooth += raw
         }
         
