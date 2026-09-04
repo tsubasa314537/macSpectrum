@@ -56,7 +56,7 @@ struct SpectrumAnalyser: View {
     // MARK: - 高性能单层能量喷泉（绝对高度像素级渐变修正）
     @ViewBuilder
     private func bar(value: Float, colorPos: Double) -> some View {
-        let intensity = CGFloat(max(0.0, min(1.0, value)))
+        let intensity = CGFloat(value)//CGFloat(max(0.0, min(1.32, value)))
         let height = max(minHeight, intensity * maxHeight)
         let baseColor = palette.color(position: colorPos, intensity: Double(value))
         
@@ -66,16 +66,18 @@ struct SpectrumAnalyser: View {
             let heightRange = maxHeight - minHeight
             let ratio = heightRange > 0 ? (height - minHeight) / heightRange : 0.0
             
-            let blurRadius = 5.0 + (Double(ratio) * (-3.5))
+//            let blurRadius = 5.0 + (Double(ratio) * (-3.5))
+//            let dampingRadius = 0.9 + (Double(ratio) * (-0.12))
+            
             
             SmoothPentagon()
                 .fill(baseColor)
                 .frame(width: barWidthBlack)
                 .frame(height: height)
             // 将自适应模糊挂载在最下面，并且跟随 value（或者高度）同步丝滑渐变！
-                .blur(radius: blurRadius)
-//                .blur(radius: 1.5, opaque: false)
-                .animation(.interactiveSpring(response: 0.15, dampingFraction: 0.7, blendDuration: 0), value: value)
+//                .blur(radius: blurRadius)
+                .blur(radius: 2.0, opaque: false)
+                .animation(.interactiveSpring(response: 0.15, dampingFraction: 0.78, blendDuration: 0), value: value)
 //                .animation(
 //                    .spring(
 //                        response: 0.15,
