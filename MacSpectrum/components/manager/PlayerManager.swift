@@ -100,12 +100,24 @@ class PlayerManager: ObservableObject {
         progressTimer = nil
     }
     
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
     init(songsURL: URL, lyricsURL: URL) {
         
         self.songsURL = songsURL
         self.lyricsURL = lyricsURL
         
         setupAudioGraph()
+        
+        // 🚀【核心防护】：监听系统 AudioEngine 配置改变 Notification（如腾讯会议、插拔耳机等）
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleEngineConfigurationChange),
+            name: .AVAudioEngineConfigurationChange,
+            object: engine
+        )
         
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultOutputDevice, // 核心选择器：默认输出设备改变
@@ -125,6 +137,40 @@ class PlayerManager: ObservableObject {
         updateDynamicDelay()
         
         setupGlobalRemoteCommandCenter()
+    }
+    
+    // 🎧 当腾讯会议等 APP 启动/抢占硬件，触发 AVAudioEngine 配置重置时的处理函数
+    @objc private func handleEngineConfigurationChange(notification: Notification) {
+        print("⚠️ [macSpectrum] 探测到 CoreAudio 硬件配置/采样率改变（如腾讯会议启动），准备重启引擎...")
+        
+        // 延迟 0.5 秒，避开 CoreAudio 硬件交接的最混乱时刻，给系统留出缓冲时间
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.restartEngineSafely()
+        }
+    }
+    
+    // 🚀 安全重启 Engine 逻辑
+    private func restartEngineSafely() {
+        let wasPlaying = isPlaying
+        
+        // 1. 如果引擎正在运行，先停止
+        if engine.isRunning {
+            engine.stop()
+        }
+        
+        // 2. 重新准备并启动 Engine
+        do {
+            engine.prepare()
+            try engine.start()
+            print("✅ [macSpectrum] AVAudioEngine 成功恢复，恢复硬件绑定！")
+            
+            // 3. 如果之前正在播放，恢复 playerNode 的播放状态
+            if wasPlaying {
+                playerNode.play()
+            }
+        } catch {
+            print("❌ [macSpectrum] 恢复 Engine 失败: \(error)")
+        }
     }
     
     // 🚀 【核心修复：多媒体总线无条件强占机制】
