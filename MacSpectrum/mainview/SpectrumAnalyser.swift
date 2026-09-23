@@ -49,6 +49,7 @@ struct SpectrumAnalyser: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .padding(.bottom, 3)
             .padding(.horizontal, 16)
+            .drawingGroup()
         }
         .frame(minWidth: 1100, minHeight: 150)
     }
@@ -60,32 +61,23 @@ struct SpectrumAnalyser: View {
         let height = max(minHeight, intensity * maxHeight)
         let baseColor = palette.color(position: colorPos, intensity: Double(value))
         
+        // 🚀 【核心巧思】：实时计算当前柱子的高度比例
+        // 为了防止极端的边界情况导致除以 0，我们加个安全保护
+        let heightRange = maxHeight - minHeight
+        let ratio = heightRange > 0 ? (height - minHeight) / heightRange : 0.0
+        
+        let blurRadius = 5.0 + (Double(ratio) * (-1.5))
+        
         if themeType == "black" {
-            // 🚀 【核心巧思】：实时计算当前柱子的高度比例
-            // 为了防止极端的边界情况导致除以 0，我们加个安全保护
-            let heightRange = maxHeight - minHeight
-            let ratio = heightRange > 0 ? (height - minHeight) / heightRange : 0.0
-            
-//            let blurRadius = 5.0 + (Double(ratio) * (-3.5))
-//            let dampingRadius = 0.9 + (Double(ratio) * (-0.12))
-            
             
             SmoothPentagon()
                 .fill(baseColor)
                 .frame(width: barWidthBlack)
                 .frame(height: height)
-            // 将自适应模糊挂载在最下面，并且跟随 value（或者高度）同步丝滑渐变！
-//                .blur(radius: blurRadius)
-                .blur(radius: 2.0, opaque: false)
-                .animation(.interactiveSpring(response: 0.15, dampingFraction: 0.78, blendDuration: 0), value: value)
-//                .animation(
-//                    .spring(
-//                        response: 0.15,
-//                        dampingFraction: 1.0,
-//                        blendDuration: 0
-//                    ),
-//                    value: value
-//                )
+                .blur(radius: 1.5, opaque: false)
+                .shadow(color: baseColor.opacity(0.8), radius: blurRadius, x: 0, y: 0)
+//                .animation(.interactiveSpring(response: 0.15, dampingFraction: 0.66, blendDuration: 0), value: value)
+                .animation(.snappy(duration: 0.17, extraBounce: 0.18), value: value)
         } else {
             CompositeEnergyBar(
                 height: height,
@@ -95,6 +87,7 @@ struct SpectrumAnalyser: View {
                 maxH: maxHeight,
                 minH: minHeight
             )
+            .shadow(color: baseColor.opacity(0.8), radius: blurRadius * 0.35, x: 0, y: 0)
             
         }
         

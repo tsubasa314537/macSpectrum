@@ -12,9 +12,10 @@ class AudioManager: ObservableObject {
     
     private var playerNode: AVAudioPlayerNode?
     
-    private var smoothContrastScale: Float = 1.0
+//    private var smoothContrastScale: Float = 1.0
     
     // ── 双声道各自维护独立的环形缓冲区和峰值 ──────────────────────
+    private var lastUIUpdateTime: Double = 0
     
     private var totalSamples: Int = 0
     private var ringBufferL: [Float]
@@ -28,6 +29,11 @@ class AudioManager: ObservableObject {
     
     private var currentSampleRate: Float = 44100
     
+    // ── 🚀 内存优化：预分配 FFT 临时缓存与 Hann 窗，避免回调线程频繁 GC ─────────────
+    private var window: [Float]
+    private var samplesL: [Float]
+    private var samplesR: [Float]
+    
     // ── dB 映射参数 ───────────────────────────────────────────────
     private let noiseFloorDB: Float = -60.0
     private let ceilingDB:    Float = -6.0
@@ -38,20 +44,13 @@ class AudioManager: ObservableObject {
     // ── Attack / Release ─────────────────────────────────────────
     private let attack:  Float = 1.0
     private let release: Float = 0.2
-    //基准值：1.4/0.3
     
-    // ── 输出：左右各 48 个频段 ────────────────────────────────────
+    // ── 输出：左右各 32 个频段 ────────────────────────────────────
     @Published var leftMagnitudes:  [Float]
     @Published var rightMagnitudes: [Float]
     
-    // 💾 【新增消噪沙盒】：用来死死记住上一帧光柱停留在屏幕上的真实渲染高度
     private var lastLeftRender:  [Float]
     private var lastRightRender: [Float]
-    
-    
-//    var isTriggered: Bool = false
-//    var triggerValue: Float = 0.0 // 👈 这个值可以传给 UI 驱动全局闪烁或鼓点爆炸动效
-    
     
     init() {
         let log2n = vDSP_Length(log2(Float(fftSize)))
@@ -64,26 +63,27 @@ class AudioManager: ObservableObject {
         lastLeftRender = Array(repeating: 0, count: bandCount)
         lastRightRender = Array(repeating: 0, count: bandCount)
         
-        //初始化时一次分配
         ringBufferL = Array(repeating: 0, count: fftSize)
         ringBufferR = Array(repeating: 0, count: fftSize)
         prevBands = Array(repeating: 0, count: fftSize)
+        
+        // 🚀 预分配与预计算
+        samplesL = Array(repeating: 0, count: fftSize)
+        samplesR = Array(repeating: 0, count: fftSize)
+        window   = Array(repeating: 0, count: fftSize)
+        vDSP_hann_window(&window, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
         
         fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))
     }
     
     func installTap(on mixer: AVAudioMixerNode) {
-        
         let format = mixer.outputFormat(forBus: 0)
-        
         mixer.removeTap(onBus: 0)
         
         mixer.installTap(onBus: 0,
-                         //在一个fft窗口周期内回调4次
                          bufferSize: AVAudioFrameCount(fftSize / 4),
                          format: format) { [weak self] buffer, _ in
-            self?.processAudio(buffer: buffer,
-                               channelCount: Int(format.channelCount))
+            self?.processAudio(buffer: buffer, channelCount: Int(format.channelCount))
         }
     }
     
@@ -103,8 +103,7 @@ class AudioManager: ObservableObject {
         totalSamples += frameCount
         if totalSamples < fftSize { return }
         
-        var samplesL = [Float](repeating: 0, count: fftSize)
-        var samplesR = [Float](repeating: 0, count: fftSize)
+        // 🚀 直接重用全局预分配的缓存，不重新初始化数组
         let tailCount = fftSize - writeIndex
         samplesL[0..<tailCount] = ringBufferL[writeIndex..<fftSize]
         samplesR[0..<tailCount] = ringBufferR[writeIndex..<fftSize]
@@ -116,30 +115,30 @@ class AudioManager: ObservableObject {
         
         let prevL = leftMagnitudes
         let prevR = rightMagnitudes
-    
+        
         let rawBandsL = computeBands(
             rawMags: magsL,
             previous: prevL,
             peak: &peakL
-            //            triggered: isRealtimeKickTriggered
         )
         let rawBandsR = computeBands(
             rawMags: magsR,
             previous: prevR,
             peak: &peakR
-            //            triggered: isRealtimeKickTriggered
         )
-        
-//        let currentTrigger = self.triggerValue
         
         lastLeftRender  = rawBandsL
         lastRightRender = rawBandsR
         
-        // ── 统一打包派发给主线程 ──────────────────────────────────────────
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.leftMagnitudes = lastLeftRender
-            self.rightMagnitudes = lastRightRender
+        let currentTime = CACurrentMediaTime()
+        // 🚀【核心节流】：限制最多每秒刷 60 次（约 0.016 秒），避免音频回调（每秒 86+ 次）把主线程塞爆
+        if currentTime - lastUIUpdateTime >= 0.02 {
+            lastUIUpdateTime = currentTime
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.leftMagnitudes = self.lastLeftRender
+                self.rightMagnitudes = self.lastRightRender
+            }
         }
     }
     
@@ -150,10 +149,8 @@ class AudioManager: ObservableObject {
         let halfSize = fftSize / 2
         let log2n    = vDSP_Length(log2(Float(fftSize)))
         
-        // Hann 窗
         var windowed = [Float](repeating: 0, count: fftSize)
-        var window   = [Float](repeating: 0, count: fftSize)
-        vDSP_hann_window(&window, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
+        // 🚀 复用预存的 Hann 窗
         vDSP_vmul(samples, 1, window, 1, &windowed, 1, vDSP_Length(fftSize))
         
         var real  = [Float](repeating: 0, count: halfSize)
@@ -177,7 +174,6 @@ class AudioManager: ObservableObject {
         return mags
     }
     
-    // 🎼 宏观抗噪 - 自适应高斯能量提取
     private func computeGaussianEnergy(
         centerBand: Int,
         rawMags: [Float],
@@ -191,26 +187,18 @@ class AudioManager: ObservableObject {
         let (_, bEnd)   = bins(band: rightBand, minFreq: minFreq, maxFreq: maxFreq, sr: currentSampleRate)
         
         let centerBin = Float(bStart + bEnd) / 2.0
-        let radius = max(Float(bEnd - bStart) / 2.0, 1.0)
+        let radius = Float(bEnd - bStart) / 2.0
         
         let s = max(0, bStart)
         let e = min(bEnd, rawMags.count - 1)
         guard e >= s else { return rawMags[s] }
         
-        // 🎯 抗噪平滑：平滑求出当前区域的整体平均能量，避免被单一 bin 噪波干扰
-        var sum: Float = 0.0
-        for bin in s...e { sum += rawMags[bin] }
-        let avg = sum / Float(e - s + 1)
-        
         var weightedSum: Float = 0.0
         var weightTotal: Float = 0.0
         
-        // 🎯 胖瘦系数平稳收敛在 1.8 ~ 2.8 之间，消灭微观抖动毛刺
-        let factor: Float = 2.2
-        
         for bin in s...e {
             let dist = (Float(bin) - centerBin) / radius
-            let weight = exp(-dist * dist * factor)
+            let weight = exp(-dist * dist)
             
             weightedSum += rawMags[bin] * weight
             weightTotal += weight
@@ -228,7 +216,6 @@ class AudioManager: ObservableObject {
         
         var rawValues = [Float](repeating: 0, count: bandCount)
         
-        // ── 🥁 1. 预计算低频（0, 1, 2）的平均鼓点爆发力 ──────────────────────────
         var bassEnergySum: Float = 0.0
         for i in 0..<2 {
             let (b1, b2) = bins(band: i, minFreq: minFreq, maxFreq: maxFreq, sr: currentSampleRate)
@@ -253,54 +240,61 @@ class AudioManager: ObservableObject {
             let dB = log2(max(normalized, 1e-10)) * 3.0103
             let mapped = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
             
-            let redistributedBass = i >= 3 ? kickImpact : 0.0
-            let raw = i >= 3 ? mapped * 0.90 + redistributedBass * 0.85 : mapped
-            let prev = previous[i]
+            let redistributedBass = i >= 2 ? kickImpact : 0.0
             
-            let smoothed = raw > prev
-            ? prev * (1.0 - attack) + raw * attack
-            : prev * release + raw * (1.0 - release)
+            var raw = Float(0.0)
+            if mapped < 0.32 {
+                raw = mapped * 0.88 + redistributedBass * 0.55
+            } else {
+                if mapped > 0.65 {
+                    let delta = mapped - 0.65
+                    raw = 0.65 + delta + pow(delta, 1.2) * 0.44
+//                    if raw > 1.0 {
+//                        raw = 1.0 + log1p((raw - 1.0) * 0.7) * 0.72
+//                    }
+                } else {
+                    raw = mapped
+                }
+//            } else {
+//                raw = mapped
+            }
+            
+            let prev = previous[i]
+            let smoothed = raw * 0.98 + prev * 0.02
+            
+            
+//            let smoothed = raw > prev
+//            ? prev * (1.0 - attack) + raw * attack
+//            : prev * release + raw * (1.0 - release)
             
             rawValues[i] = max(0.0, smoothed)
         }
         
-        // 🎯 1. 全局动态 Gamma 指数
-        let frameAvgEnergy = rawValues.reduce(0, +) / Float(bandCount)
-        let dynamicGamma = 1.1 + min(max(frameAvgEnergy * 1.2, 0.0), 0.7)
-        
-        // 🎯 2. 邻柱自适应去毛刺（Slight Neighbor Anti-Aliasing）
+        // 🚀 修正对称去毛刺：使用临时的 finalBands，保证左右计算平等的未平滑原值
+        var finalBands = [Float](repeating: 0, count: bandCount)
         for i in 0..<bandCount {
             var val = rawValues[i]
             
-            if val > 0 {
-                val = pow(val, dynamicGamma)
-            } else {
-                val = 0
-            }
-            
             if val > 1.0 {
-                val = 1.0 + log1p((val - 1.0) * 0.7) * 0.5
+                val = 1.0 + log1p((val - 1.0) * 0.7) * 0.72
             }
             
-            // 🚀【核心去毛刺】：仅与左右邻居做 8% 的极微量抗锯齿融合
-            // 这样既消除了硬边缘毛刺，又完全不会破坏刺刀的硬度！
-            let left = i > 0 ? result[i - 1] : val
+            let left = i > 0 ? rawValues[i - 1] : val
             let right = i < bandCount - 1 ? rawValues[i + 1] : val
             
-            // 动态抑制：如果当前柱是明显高于左右的尖峰（刺刀），融合度自动降低到 0
             let isPeak = val > left && val > right
             let blendFactor: Float = isPeak ? 0.02 : 0.08
             
             let cleanVal = val * (1.0 - 2.0 * blendFactor) + (left + right) * blendFactor
             
-            result[i] = max(0.0, cleanVal)
+            finalBands[i] = max(0.0, cleanVal)
         }
         
+        result = finalBands
         prevBands = result
         return result
     }
     
-    // MARK: - 🚀 升级版：纯正 Mel 声学刻度频段划分（彻底解决低频全抬、重叠问题）
     private func bins(band: Int, minFreq: Float, maxFreq: Float, sr: Float) -> (Int, Int) {
         let minMel = hzToMel(minFreq)
         let maxMel = hzToMel(maxFreq)
@@ -314,7 +308,6 @@ class AudioManager: ObservableObject {
         let b1 = freqToBin(f1, sr: sr)
         var b2 = freqToBin(f2, sr: sr)
         
-        // 🎯 核心防死区补丁：如果低频 bin1 == bin2，强制 b2 递增，确保每根柱子都有独立的物理采样点！
         if b2 <= b1 {
             b2 = b1 + 1
         }
@@ -322,19 +315,16 @@ class AudioManager: ObservableObject {
         return (b1, b2)
     }
     
-    // 🎼 Hz 转 Mel 经典声学公式
     private func hzToMel(_ hz: Float) -> Float {
         return 1127.0 * log(1.0 + hz / 700.0)
     }
     
-    // 🎼 Mel 转 Hz 还原公式
     private func melToHz(_ mel: Float) -> Float {
         return 700.0 * (exp(mel / 1127.0) - 1.0)
     }
     
     private func freqToBin(_ freq: Float, sr: Float) -> Int {
         let ratio = freq / (sr / 2)
-        // 向上取整，并确保至少占据一个物理 bin 窗口，防止低频重叠死区
         return min(max(Int(ceil(ratio * Float(fftSize / 2))), 0), fftSize / 2 - 1)
     }
     
