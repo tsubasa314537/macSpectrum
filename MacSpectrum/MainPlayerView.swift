@@ -16,14 +16,12 @@ struct MainPlayerView: View {
     
     @State private var playlists: [Playlist] = []
     @State private var selectedPlaylist: Playlist?
-
+    
     @State private var lyricShown = true
     
     // 1. 获取当前系统登录用户的 Documents 目录真实路径
     let documentURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     
-    // 2. 动态拼接后面的专属文件夹，并转为 String 路径
- 
     var body: some View {
         // 🚀 用一个大外壳包裹，确保生命周期（.onAppear）在全软件运行期间只加载一次，永不被摧毁
         ZStack {
@@ -65,8 +63,6 @@ struct MainPlayerView: View {
                         }
                         
                         Divider()
-//                        themeSelector
-//                        Divider()
                         
                         SpectrumAnalyser(
                             audio: player.spectrum,
@@ -79,7 +75,7 @@ struct MainPlayerView: View {
                     .frame(width: 1050, height: 600)
                     
                     Divider()
-                    if lyricShown/* && !lyricManager.lyrics.isEmpty*/ {
+                    if lyricShown {
                         LyricView(
                             lyricManager: lyricManager,
                             player: player,
@@ -94,7 +90,6 @@ struct MainPlayerView: View {
                         .frame(width: 300)
                         .background(Color.clear)
                     }
-          
                 }
             }
         }
@@ -118,7 +113,6 @@ struct MainPlayerView: View {
             // 全局快捷键大总管
             NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-//                print("keycode===\(event.keyCode)")
                 switch event.keyCode {
                     case 37:
                         if modifiers == .command && !player.isAutopilotMode {
@@ -200,6 +194,9 @@ struct MainPlayerView: View {
                     window.level = .normal
                     window.isMovableByWindowBackground = false
                 }
+                
+                // 🎯 核心新增：改变尺寸后，立刻将窗口放回屏幕中心！
+                window.center()
             }
         }
         .background(
@@ -207,7 +204,7 @@ struct MainPlayerView: View {
                 if !player.isAutopilotMode {
                     if player.themeType == "black" {
                         ZStack {
-                            Rectangle().fill(Color.black/*.opacity(0.2)*/)
+                            Rectangle().fill(Color.black)
                             Rectangle().fill(palette.bgPalette).opacity(0.20)
                         }
                         .ignoresSafeArea(.container, edges: .top)
@@ -292,7 +289,6 @@ struct MainPlayerView: View {
         if nowPlaying {
             return palette.bgPalette
         } else {
-//            return Color.white
             return player.themeType == "black" ? Color.white : Color.black
         }
     }
@@ -322,12 +318,10 @@ struct MainPlayerView: View {
                     Text(parts.count >= 2 ? parts[1].trimmingCharacters(in: .whitespaces) : song.title)
                         .font(.system(size: 18, weight: .medium))
                         .foregroundColor(player.themeType == "black" ? .white : .black)
-//                        .foregroundColor(.white)
                         .lineLimit(1)
                     Text(parts.count >= 2 ? parts[0].trimmingCharacters(in: .whitespaces) : "未知歌手")
                         .font(.system(size: 14))
                         .foregroundColor(player.themeType == "black" ? Color.white.opacity(0.5) : Color.black.opacity(0.5))
-//                        .foregroundColor(Color.white.opacity(0.5))
                 }
             }
             Spacer()
@@ -338,28 +332,5 @@ struct MainPlayerView: View {
                     NSApp.keyWindow?.performDrag(with: NSApp.currentEvent!)
                 }
         )
-    }
-    
-    private var themeSelector: some View {
-        HStack(spacing: 15) {
-            Spacer()
-            Text("魔幻光柱")
-                .foregroundColor(.white)
-            //.foregroundColor(player.themeType == "black" ? .white : .black)
-            
-            Toggle("", isOn: $player.standardTheme)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .tint(palette.bgPalette)
-                .onChange(of: player.standardTheme) { _, select in
-                    player.themeType = select ? "white" : "black"
-                }
-            
-            Text("动感圈圈")
-                .foregroundColor(.white)
-            //.foregroundColor(player.themeType == "white" ? .black : .white)
-            Spacer()
-        }
-        .padding(.vertical, 8)
     }
 }

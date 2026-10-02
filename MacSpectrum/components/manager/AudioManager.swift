@@ -113,17 +113,17 @@ class AudioManager: ObservableObject {
         let magsL = computeFFT(samples: samplesL)
         let magsR = computeFFT(samples: samplesR)
         
-        let prevL = leftMagnitudes
-        let prevR = rightMagnitudes
+//        let prevL = leftMagnitudes
+//        let prevR = rightMagnitudes
         
         let rawBandsL = computeBands(
             rawMags: magsL,
-            previous: prevL,
+//            previous: prevL,
             peak: &peakL
         )
         let rawBandsR = computeBands(
             rawMags: magsR,
-            previous: prevR,
+//            previous: prevR,
             peak: &peakR
         )
         
@@ -208,7 +208,7 @@ class AudioManager: ObservableObject {
     }
     
     // MARK: - 频段计算
-    private func computeBands(rawMags: [Float], previous: [Float], peak: inout Float) -> [Float] {
+    private func computeBands(rawMags: [Float], /*previous: [Float], */peak: inout Float) -> [Float] {
         let minFreq: Float = 45
         let maxFreq: Float = 7500
         
@@ -292,9 +292,9 @@ class AudioManager: ObservableObject {
             }
             
             // 平滑衰减
-            let prev = previous[i]
-            let smoothed = raw * 0.98 + prev * 0.02
-            rawValues[i] = max(0.0, smoothed)
+//            let prev = previous[i]
+            
+            rawValues[i] = max(0.0, raw)
         }
         
         // ── 3. 对称去毛刺与输出 ──────────────────────────────────────────
