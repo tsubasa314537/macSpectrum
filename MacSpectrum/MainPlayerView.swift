@@ -17,6 +17,8 @@ struct MainPlayerView: View {
     @State private var playlists: [Playlist] = []
     @State private var selectedPlaylist: Playlist?
 
+    @State private var lyricShown = true
+    
     // 1. 获取当前系统登录用户的 Documents 目录真实路径
     let documentURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     
@@ -77,20 +79,22 @@ struct MainPlayerView: View {
                     .frame(width: 1050, height: 600)
                     
                     Divider()
-                    
-                    LyricView(
-                        lyricManager: lyricManager,
-                        player: player,
-                        themeType: $player.themeType,
-                        palette: palette
-                    )
-                    .onAppear {
-                        if let title = player.currentSong?.title {
-                            lyricManager.loadLyric(for: title)
+                    if lyricShown/* && !lyricManager.lyrics.isEmpty*/ {
+                        LyricView(
+                            lyricManager: lyricManager,
+                            player: player,
+                            themeType: $player.themeType,
+                            palette: palette
+                        )
+                        .onAppear {
+                            if let title = player.currentSong?.title {
+                                lyricManager.loadLyric(for: title)
+                            }
                         }
+                        .frame(width: 300)
+                        .background(Color.clear)
                     }
-                    .frame(width: 300)
-                    .background(Color.clear)
+          
                 }
             }
         }
@@ -114,8 +118,14 @@ struct MainPlayerView: View {
             // 全局快捷键大总管
             NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-                
+//                print("keycode===\(event.keyCode)")
                 switch event.keyCode {
+                    case 37:
+                        if modifiers == .command && !player.isAutopilotMode {
+                            lyricShown.toggle()
+                            return nil
+                        }
+                        return event
                     case 40: // Cmd + K
                         if modifiers == .command && player.isAutopilotMode {
                             player.karaoke.toggle()
@@ -136,7 +146,7 @@ struct MainPlayerView: View {
                         }
                         return event
                     case 17: // Cmd + T
-                        if /*!player.isAutopilotMode && */modifiers == .command {
+                        if !player.isAutopilotMode && modifiers == .command {
                             if player.themeType == "black" {
                                 player.themeType = "white"
                                 player.standardTheme = false
@@ -144,7 +154,7 @@ struct MainPlayerView: View {
                                 player.themeType = "black"
                                 player.standardTheme = true
                             }
-//                            player.standardTheme.toggle()
+                            player.standardTheme.toggle()
                             return nil
                         }
                         return event
@@ -195,25 +205,25 @@ struct MainPlayerView: View {
         .background(
             Group {
                 if !player.isAutopilotMode {
-//                    if player.themeType == "black" {
-                    ZStack {
-                        Rectangle().fill(Color.black.opacity(0.2))
-                        Rectangle().fill(palette.bgPalette).opacity(0.15)
+                    if player.themeType == "black" {
+                        ZStack {
+                            Rectangle().fill(Color.black/*.opacity(0.2)*/)
+                            Rectangle().fill(palette.bgPalette).opacity(0.20)
+                        }
+                        .ignoresSafeArea(.container, edges: .top)
+                    } else {
+                        ZStack {
+                            Color(red: 0.75, green: 0.75, blue: 0.75)
+                            if let img = player.nowAlbum {
+                                Image(nsImage: img)
+                                    .resizable()
+                                    .blur(radius: 30, opaque: true)
+                                    .opacity(0.2)
+                                    .scaledToFill()
+                            }
+                        }
+                        .clipped()
                     }
-                    .ignoresSafeArea(.container, edges: .top)
-//                    } else {
-//                        ZStack {
-//                            Color(red: 0.85, green: 0.85, blue: 0.85)
-//                            if let img = player.nowAlbum {
-//                                Image(nsImage: img)
-//                                    .resizable()
-//                                    .blur(radius: 30, opaque: true)
-//                                    .opacity(0.2)
-//                                    .scaledToFill()
-//                            }
-//                        }
-//                        .clipped()
-//                    }
                 }
             }
         )
@@ -282,8 +292,8 @@ struct MainPlayerView: View {
         if nowPlaying {
             return palette.bgPalette
         } else {
-            return Color.white
-//            return player.themeType == "black" ? Color.white : Color.black
+//            return Color.white
+            return player.themeType == "black" ? Color.white : Color.black
         }
     }
     
@@ -311,13 +321,13 @@ struct MainPlayerView: View {
                 VStack(spacing: 2) {
                     Text(parts.count >= 2 ? parts[1].trimmingCharacters(in: .whitespaces) : song.title)
                         .font(.system(size: 18, weight: .medium))
-//                        .foregroundColor(player.themeType == "black" ? .white : .black)
-                        .foregroundColor(.white)
+                        .foregroundColor(player.themeType == "black" ? .white : .black)
+//                        .foregroundColor(.white)
                         .lineLimit(1)
                     Text(parts.count >= 2 ? parts[0].trimmingCharacters(in: .whitespaces) : "未知歌手")
                         .font(.system(size: 14))
-//                        .foregroundColor(player.themeType == "black" ? Color.white.opacity(0.5) : Color.black.opacity(0.5))
-                        .foregroundColor(Color.white.opacity(0.5))
+                        .foregroundColor(player.themeType == "black" ? Color.white.opacity(0.5) : Color.black.opacity(0.5))
+//                        .foregroundColor(Color.white.opacity(0.5))
                 }
             }
             Spacer()

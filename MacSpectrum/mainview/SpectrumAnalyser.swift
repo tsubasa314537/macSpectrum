@@ -88,7 +88,6 @@ struct SpectrumAnalyser: View {
                 minH: minHeight
             )
             .shadow(color: baseColor.opacity(0.8), radius: blurRadius * 0.35, x: 0, y: 0)
-            
         }
         
 

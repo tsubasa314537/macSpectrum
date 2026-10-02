@@ -408,8 +408,8 @@ class PlayerManager: ObservableObject {
         // 我们的目标是让“软件延迟 + 硬件延迟 + 软件沙漏扣留时间 = 一个恒定的同步完美点”
         // 经过您之前的实测，当总延迟顶到 180ms（0.180秒）左右时，人眼和人耳最舒服。
         
-        let targetTotalDelay: Double = 0.198 // 👈 黄金同步靶向总时间
-        let softwareBaseOffset: Double = 0.023 // 您的软件渲染基础开销
+        let targetTotalDelay: Double = 0.193 // 👈 黄金同步靶向总时间
+        let softwareBaseOffset: Double = 0.018 // 您的软件渲染基础开销
         
         // ⚖️ 关键在此：用总目标，减去软件开销，再减去硬件已经自带的延迟！
         // 设备硬件自己延迟得越多（如 AirPods 160ms），我们的软件沙漏就应该扣留得越少（183 - 23 - 160 = 0ms，开闸放水！）

@@ -214,63 +214,90 @@ class AudioManager: ObservableObject {
         
         peak *= peakDecay
         
-        var rawValues = [Float](repeating: 0, count: bandCount)
-        
+        // ── 1. 第一波与第二波融合：一次性算完基准能量与低音冲击 ──────────────────
+        var rawMappedBands = [Float](repeating: 0, count: bandCount)
+        var totalEnergySum: Float = 0.0
         var bassEnergySum: Float = 0.0
-        for i in 0..<2 {
+        
+        for i in 0..<bandCount {
             let (b1, b2) = bins(band: i, minFreq: minFreq, maxFreq: maxFreq, sr: currentSampleRate)
             let energy = computeEnergy(from: b1, to: b2, in: rawMags)
             let norm = energy / max(peak, 1e-10)
             let dB = log2(max(norm, 1e-10)) * 3.0103
-            let mapped = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
-            bassEnergySum += min(max(mapped, 0), 1)
+            let mapped = min(max((dB - noiseFloorDB) / (ceilingDB - noiseFloorDB), 0), 1)
+            
+            rawMappedBands[i] = mapped
+            totalEnergySum += mapped
+            
+            if i < 2 {
+                bassEnergySum += mapped
+            }
         }
         
+        // 计算当前帧的自适应指标
+        let avgEnergy = totalEnergySum / Float(bandCount) // 当前帧全频段平均能量
         let avgBassEnergy = bassEnergySum / 2.0
         let kickThreshold: Float = 0.65
         let kickImpact = max(0, avgBassEnergy - kickThreshold)
         
+        // 🚀 【自适应动态阈值计算】
+        // 根据 avgEnergy 动态计算当前的低区/高区切分点，让整首歌具备自适应呼吸感！
+        let dynamicLowThresh  = max(0.20, min(0.40, 0.32 * (0.8 + avgEnergy * 0.4)))
+        let dynamicHighThresh = max(0.55, min(0.75, 0.65 * (0.8 + avgEnergy * 0.4)))
+        
+        var rawValues = [Float](repeating: 0, count: bandCount)
+        
+        // ── 2. 第三波循环：高斯平滑 + 动态自适应整形 ────────────────────────────
         for i in 0..<bandCount {
             let energy = computeGaussianEnergy(centerBand: i, rawMags: rawMags, minFreq: minFreq, maxFreq: maxFreq)
             energies[i] = energy
             
             peak = max(peak, energy)
             let normalized = energy / max(peak, 1e-10)
-            
             let dB = log2(max(normalized, 1e-10)) * 3.0103
             let mapped = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
             
             let redistributedBass = i >= 2 ? kickImpact : 0.0
             
-            var raw = Float(0.0)
-            if mapped < 0.32 {
-                raw = mapped * 0.88 + redistributedBass * 0.55
+            var raw: Float = 0.0
+            
+            if mapped < dynamicLowThresh {
+                // 1. 低能量区：结合 avgEnergy 做自适应暗部抬升
+                // 音乐整体轻柔（avgEnergy 小）时，提升暗部细节；音乐高亢时，保持底部干净
+                let adaptiveBoost = (1.0 - avgEnergy) * 0.15
+                raw = mapped * (/*0.88 + */adaptiveBoost) + redistributedBass * (1.0 - adaptiveBoost)
+//                raw = dynamicLowThresh + log1p((baseRaw - dynamicLowThresh) * 0.7)
+                
+            } else if mapped <= dynamicHighThresh {
+                // 🚀 2. 中能量区：基于 dynamicLowThresh 与 dynamicHighThresh 的动态 Smoothstep
+                let range = max(1e-5, dynamicHighThresh - dynamicLowThresh)
+                let t = (mapped - dynamicLowThresh) / range
+                
+                let sCurve = t * t * (3.0 - 2.0 * t)
+                
+                let minVal: Float = dynamicLowThresh
+                let maxVal: Float = dynamicHighThresh
+                
+                // 叠加由 avgEnergy 驱动的动态凸起感（中频响应更加跟拍）
+                let midContrast = 0.85 + avgEnergy * 0.25
+                raw = minVal + (maxVal - minVal) * (sCurve * midContrast + pow(t, 1.3) * (1.0 - midContrast))
+                
             } else {
-                if mapped > 0.65 {
-                    let delta = mapped - 0.65
-                    raw = 0.65 + delta + pow(delta, 1.2) * 0.44
-//                    if raw > 1.0 {
-//                        raw = 1.0 + log1p((raw - 1.0) * 0.7) * 0.72
-//                    }
-                } else {
-                    raw = mapped
-                }
-//            } else {
-//                raw = mapped
+                // 3. 高能量区：动态指数爆发
+                let delta = mapped - dynamicHighThresh
+                raw = dynamicHighThresh + delta + pow(delta, 1.2) * (0.44 + avgEnergy * 0.2)
+//                if raw > 1.0 {
+//                    raw = 1.0 + pow(raw - 1.0, 1.2)
+//                }
             }
             
+            // 平滑衰减
             let prev = previous[i]
             let smoothed = raw * 0.98 + prev * 0.02
-            
-            
-//            let smoothed = raw > prev
-//            ? prev * (1.0 - attack) + raw * attack
-//            : prev * release + raw * (1.0 - release)
-            
             rawValues[i] = max(0.0, smoothed)
         }
         
-        // 🚀 修正对称去毛刺：使用临时的 finalBands，保证左右计算平等的未平滑原值
+        // ── 3. 对称去毛刺与输出 ──────────────────────────────────────────
         var finalBands = [Float](repeating: 0, count: bandCount)
         for i in 0..<bandCount {
             var val = rawValues[i]
@@ -286,7 +313,6 @@ class AudioManager: ObservableObject {
             let blendFactor: Float = isPeak ? 0.02 : 0.08
             
             let cleanVal = val * (1.0 - 2.0 * blendFactor) + (left + right) * blendFactor
-            
             finalBands[i] = max(0.0, cleanVal)
         }
         
