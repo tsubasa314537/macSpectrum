@@ -208,46 +208,23 @@ class AudioManager: ObservableObject {
     }
     
     // MARK: - 频段计算
-    private func computeBands(rawMags: [Float], /*previous: [Float], */peak: inout Float) -> [Float] {
+    private func computeBands(rawMags: [Float], peak: inout Float) -> [Float] {
         let minFreq: Float = 45
         let maxFreq: Float = 7500
         
         peak *= peakDecay
         
-        // ── 1. 第一波与第二波融合：一次性算完基准能量与低音冲击 ──────────────────
-        var rawMappedBands = [Float](repeating: 0, count: bandCount)
+        // ── 1. 提取第 0 频段作为节拍核心（Kick Impact） ──────────────────
+        let energyBass = computeGaussianEnergy(centerBand: 0, rawMags: rawMags, minFreq: minFreq, maxFreq: maxFreq)
+        let normBass = energyBass / max(peak, 1e-10)
+        let dBBass = log2(max(normBass, 1e-10)) * 3.0103
+        let mappedBass = min(max((dBBass - noiseFloorDB) / (ceilingDB - noiseFloorDB), 0), 1)
+        
+        let rawKickImpact = max(0, mappedBass - prevBands[0])
+        let kickImpact = pow(rawKickImpact, 0.75) * 0.20 // 完美收敛的小区间增益
+        
+        // ── 2. 第一波循环：计算全频段能量，建立宏观自适应指标 ─────────────
         var totalEnergySum: Float = 0.0
-        var bassEnergySum: Float = 0.0
-        
-        for i in 0..<bandCount {
-            let (b1, b2) = bins(band: i, minFreq: minFreq, maxFreq: maxFreq, sr: currentSampleRate)
-            let energy = computeEnergy(from: b1, to: b2, in: rawMags)
-            let norm = energy / max(peak, 1e-10)
-            let dB = log2(max(norm, 1e-10)) * 3.0103
-            let mapped = min(max((dB - noiseFloorDB) / (ceilingDB - noiseFloorDB), 0), 1)
-            
-            rawMappedBands[i] = mapped
-            totalEnergySum += mapped
-            
-            if i < 2 {
-                bassEnergySum += mapped
-            }
-        }
-        
-        // 计算当前帧的自适应指标
-        let avgEnergy = totalEnergySum / Float(bandCount) // 当前帧全频段平均能量
-        let avgBassEnergy = bassEnergySum / 2.0
-        let kickThreshold: Float = 0.65
-        let kickImpact = max(0, avgBassEnergy - kickThreshold)
-        
-        // 🚀 【自适应动态阈值计算】
-        // 根据 avgEnergy 动态计算当前的低区/高区切分点，让整首歌具备自适应呼吸感！
-        let dynamicLowThresh  = max(0.20, min(0.40, 0.32 * (0.8 + avgEnergy * 0.4)))
-        let dynamicHighThresh = max(0.55, min(0.75, 0.65 * (0.8 + avgEnergy * 0.4)))
-        
-        var rawValues = [Float](repeating: 0, count: bandCount)
-        
-        // ── 2. 第三波循环：高斯平滑 + 动态自适应整形 ────────────────────────────
         for i in 0..<bandCount {
             let energy = computeGaussianEnergy(centerBand: i, rawMags: rawMags, minFreq: minFreq, maxFreq: maxFreq)
             energies[i] = energy
@@ -255,49 +232,68 @@ class AudioManager: ObservableObject {
             peak = max(peak, energy)
             let normalized = energy / max(peak, 1e-10)
             let dB = log2(max(normalized, 1e-10)) * 3.0103
+            let mapped = min(max((dB - noiseFloorDB) / (ceilingDB - noiseFloorDB), 0), 1)
+            totalEnergySum += mapped
+        }
+        
+        // 计算当前帧的自适应指标（呼吸感来源）
+        let avgEnergy = totalEnergySum / Float(bandCount)
+        
+        // 🚀 动态自适应阈值：根据整首歌的宏观能量动态伸缩
+        let dynamicLowThresh  = max(0.20, min(0.40, 0.32 * (0.8 + avgEnergy * 0.4)))
+        let dynamicHighThresh = max(0.55, min(0.75, 0.65 * (0.8 + avgEnergy * 0.4)))
+        
+        var rawValues = [Float](repeating: 0, count: bandCount)
+        
+        // ── 3. 第二波循环：三段式自适应非线性整形 + 节拍融合 ──────────────
+        for i in 0..<bandCount {
+            let energy = energies[i]
+            let normalized = energy / max(peak, 1e-10)
+            let dB = log2(max(normalized, 1e-10)) * 3.0103
             let mapped = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
             
-            let redistributedBass = i >= 2 ? kickImpact : 0.0
+            // 节拍冲击增益：高频区稍微做一点空间衰减，中低频全额享受
+            let frequencyFactor = Float(bandCount - i) / Float(bandCount)
+            let redistributedBass = i >= 2 ? (kickImpact * (0.5 + 0.5 * frequencyFactor)) : 0.0
             
             var raw: Float = 0.0
             
             if mapped < dynamicLowThresh {
-                // 1. 低能量区：结合 avgEnergy 做自适应暗部抬升
-                // 音乐整体轻柔（avgEnergy 小）时，提升暗部细节；音乐高亢时，保持底部干净
+                // 1. 低能量区：暗部自适应抬升
                 let adaptiveBoost = (1.0 - avgEnergy) * 0.15
-                raw = mapped * (/*0.88 + */adaptiveBoost) + redistributedBass * (1.0 - adaptiveBoost)
-//                raw = dynamicLowThresh + log1p((baseRaw - dynamicLowThresh) * 0.7)
+                raw = mapped * (0.88 + adaptiveBoost) + redistributedBass
                 
             } else if mapped <= dynamicHighThresh {
-                // 🚀 2. 中能量区：基于 dynamicLowThresh 与 dynamicHighThresh 的动态 Smoothstep
+                // 🚀 2. 中能量区：经典的 Smoothstep S 曲线 ($3t^2 - 2t^3$) 配合动态对比度
                 let range = max(1e-5, dynamicHighThresh - dynamicLowThresh)
-                let t = (mapped - dynamicLowThresh) / range
+                let t = min(max((mapped - dynamicLowThresh) / range, 0), 1)
                 
-                let sCurve = t * t * (3.0 - 2.0 * t)
-                
+                let sCurve = t * t * (3.0 - 2.0 * t) // 极其丝滑的 S 形过渡
                 let minVal: Float = dynamicLowThresh
                 let maxVal: Float = dynamicHighThresh
                 
-                // 叠加由 avgEnergy 驱动的动态凸起感（中频响应更加跟拍）
                 let midContrast = 0.85 + avgEnergy * 0.25
-                raw = minVal + (maxVal - minVal) * (sCurve * midContrast + pow(t, 1.3) * (1.0 - midContrast))
+                raw = minVal + (maxVal - minVal) * (sCurve * midContrast + pow(t, 1.3) * (1.0 - midContrast)) + redistributedBass
                 
             } else {
                 // 3. 高能量区：动态指数爆发
                 let delta = mapped - dynamicHighThresh
-                raw = dynamicHighThresh + delta + pow(delta, 1.2) * (0.44 + avgEnergy * 0.2)
-//                if raw > 1.0 {
-//                    raw = 1.0 + pow(raw - 1.0, 1.2)
-//                }
+                raw = dynamicHighThresh + delta + pow(delta, 1.2) * (0.44 + avgEnergy * 0.2) + redistributedBass
+                if raw > dynamicHighThresh {
+                    raw = dynamicHighThresh + pow(raw - dynamicHighThresh, 1.2)
+                }
             }
             
-            // 平滑衰减
-//            let prev = previous[i]
+            // 时间轴上的 Attack / Release 平滑阻尼
+            let prev = prevBands[i]
+            raw = raw > prev ?
+            raw * attack + prev * (1.0 - attack) :
+            raw * (1.0 - release) + prev * release
             
             rawValues[i] = max(0.0, raw)
         }
         
-        // ── 3. 对称去毛刺与输出 ──────────────────────────────────────────
+        // ── 4. 对称去毛刺与保护 ──────────────────────────────────────────
         var finalBands = [Float](repeating: 0, count: bandCount)
         for i in 0..<bandCount {
             var val = rawValues[i]
@@ -316,7 +312,25 @@ class AudioManager: ObservableObject {
             finalBands[i] = max(0.0, cleanVal)
         }
         
-        result = finalBands
+        // ── 5. 横向粘滞流光拉扯（果冻般的横向呼吸联动） ──────────────────
+        var coupledBands = finalBands
+        let coupleFactor: Float = 0.03
+        
+        for i in 1..<bandCount {
+            let diff = coupledBands[i-1] - coupledBands[i]
+            if diff > 0 {
+                coupledBands[i] += diff * coupleFactor
+            }
+        }
+        
+        for i in stride(from: bandCount - 2, through: 0, by: -1) {
+            let diff = coupledBands[i+1] - coupledBands[i]
+            if diff > 0 {
+                coupledBands[i] += diff * coupleFactor
+            }
+        }
+        
+        result = coupledBands
         prevBands = result
         return result
     }
@@ -332,11 +346,11 @@ class AudioManager: ObservableObject {
         let f2 = melToHz(melEnd)
         
         let b1 = freqToBin(f1, sr: sr)
-        var b2 = freqToBin(f2, sr: sr)
+        let b2 = freqToBin(f2, sr: sr)
         
-        if b2 <= b1 {
-            b2 = b1 + 1
-        }
+//        if b2 <= b1 {
+//            b2 = b1 + 1
+//        }
         
         return (b1, b2)
     }
