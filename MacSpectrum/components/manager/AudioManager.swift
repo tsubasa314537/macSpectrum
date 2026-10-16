@@ -258,8 +258,13 @@ class AudioManager: ObservableObject {
             
             var raw: Float = 0.0
             
+            let fraction = log2(Float(bandCount - i)) / log2(Float(bandCount))
+            let weight =  exp(-pow(max(fraction, 1.0), 2.0))
+            
             if mapped < dynamicLowThresh {
                 // 1. 低能量区：暗部自适应抬升
+                raw *= pow(weight, 2.0)
+
                 let adaptiveBoost = (1.0 - avgEnergy) * 0.15
                 raw = mapped * (0.88 + adaptiveBoost) + redistributedBass
                 
@@ -274,7 +279,7 @@ class AudioManager: ObservableObject {
                 
                 let midContrast = 0.85 + avgEnergy * 0.25
                 raw = minVal + (maxVal - minVal) * (sCurve * midContrast + pow(t, 1.3) * (1.0 - midContrast)) + redistributedBass
-                
+
             } else {
                 // 3. 高能量区：动态指数爆发
                 let delta = mapped - dynamicHighThresh
@@ -282,6 +287,7 @@ class AudioManager: ObservableObject {
                 if raw > dynamicHighThresh {
                     raw = dynamicHighThresh + pow(raw - dynamicHighThresh, 1.2)
                 }
+//                raw = raw + delta * weight
             }
             
             // 时间轴上的 Attack / Release 平滑阻尼
@@ -297,7 +303,7 @@ class AudioManager: ObservableObject {
         var finalBands = [Float](repeating: 0, count: bandCount)
         for i in 0..<bandCount {
             var val = rawValues[i]
-            
+
             if val > 1.0 {
                 val = 1.0 + log1p((val - 1.0) * 0.7) * 0.72
             }
