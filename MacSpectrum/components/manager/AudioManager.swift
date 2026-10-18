@@ -7,7 +7,7 @@ import CoreAudio
 class AudioManager: ObservableObject {
     
     private let fftSize   = 2048
-    private let bandCount = 32
+    private let bandCount = 48
     private var fftSetup: FFTSetup?
     
     private var playerNode: AVAudioPlayerNode?
@@ -40,7 +40,7 @@ class AudioManager: ObservableObject {
     
     private var energies: [Float]
     private var result: [Float]
-    
+    private var final: [Float]
     // ── Attack / Release ─────────────────────────────────────────
     private let attack:  Float = 1.0
     private let release: Float = 0.2
@@ -55,6 +55,7 @@ class AudioManager: ObservableObject {
     init() {
         let log2n = vDSP_Length(log2(Float(fftSize)))
         result   = [Float](repeating: 0, count: bandCount)
+        final   = [Float](repeating: 0, count: bandCount - 16)
         energies = [Float](repeating: 0, count: bandCount)
         
         leftMagnitudes = Array(repeating: 0, count: bandCount)
@@ -214,19 +215,19 @@ class AudioManager: ObservableObject {
         
         peak *= peakDecay
         
-        // ── 1. 提取第 0 频段作为节拍核心（Kick Impact） ──────────────────
+        // ── 1. 提取低频核心（在 48 柱体系中，前 3 个 band 代表纯低音与踢鼓 Kick） ──
         let energyBass = computeGaussianEnergy(centerBand: 0, rawMags: rawMags, minFreq: minFreq, maxFreq: maxFreq)
         let normBass = energyBass / max(peak, 1e-10)
         let dBBass = log2(max(normBass, 1e-10)) * 3.0103
         let mappedBass = min(max((dBBass - noiseFloorDB) / (ceilingDB - noiseFloorDB), 0), 1)
         
         let rawKickImpact = max(0, mappedBass - prevBands[0])
-        let kickImpact = pow(rawKickImpact, 0.75) * 0.20 // 完美收敛的小区间增益
+        let kickImpact = pow(rawKickImpact, 0.75) * 0.30 // 完美收敛的小区间增益
         
-        // ── 2. 第一波循环：计算全频段能量，建立宏观自适应指标 ─────────────
+        // ── 2. 第一波循环：计算 48 柱全频段能量，建立宏观自适应指标 ─────────────
         var totalEnergySum: Float = 0.0
         for i in 0..<bandCount {
-            let energy = computeGaussianEnergy(centerBand: i, rawMags: rawMags, minFreq: minFreq, maxFreq: maxFreq)
+            let energy = computeGaussianEnergy(centerBand: i, rawMags: rawMags, minFreq: 180, maxFreq: 6000)
             energies[i] = energy
             
             peak = max(peak, energy)
@@ -236,58 +237,61 @@ class AudioManager: ObservableObject {
             totalEnergySum += mapped
         }
         
-        // 计算当前帧的自适应指标（呼吸感来源）
+        // 48 柱宏观平均能量
         let avgEnergy = totalEnergySum / Float(bandCount)
         
-        // 🚀 动态自适应阈值：根据整首歌的宏观能量动态伸缩
-        let dynamicLowThresh  = max(0.20, min(0.40, 0.32 * (0.8 + avgEnergy * 0.4)))
-        let dynamicHighThresh = max(0.55, min(0.75, 0.65 * (0.8 + avgEnergy * 0.4)))
+        // 🚀 针对 48 柱重新标定的自适应动态阈值（稍微收紧，过滤边缘毛刺）
+        let dynamicLowThresh  = max(0.25, min(0.45, 0.35 * (0.8 + avgEnergy * 0.35)))
+        let dynamicHighThresh = max(0.60, min(0.80, 0.70 * (0.8 + avgEnergy * 0.35)))
         
         var rawValues = [Float](repeating: 0, count: bandCount)
         
-        // ── 3. 第二波循环：三段式自适应非线性整形 + 节拍融合 ──────────────
+        // ── 3. 第二波循环：三段式非线性整形 + 矫正后的鼓点融合 ──────────────
         for i in 0..<bandCount {
             let energy = energies[i]
             let normalized = energy / max(peak, 1e-10)
             let dB = log2(max(normalized, 1e-10)) * 3.0103
             let mapped = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
             
-            // 节拍冲击增益：高频区稍微做一点空间衰减，中低频全额享受
-            let frequencyFactor = Float(bandCount - i) / Float(bandCount)
-            let redistributedBass = i >= 2 ? (kickImpact * (0.5 + 0.5 * frequencyFactor)) : 0.0
+            // 🎯 【坐标修正】：因为最终 UI 只取中间 [8..<40]，
+            // 我们让低音能量均匀注入到视觉的前 10 个柱子（即 48 柱的索引 8 到 18 附近）
+//            var redistributedBass: Float = 0.0
+//            let visualIndex = i - 8 // 映射到 UI 视角下的位置
+//            if visualIndex >= 0 && visualIndex < 40 {
+//                // 低音主要在左侧低频区绽放，随视觉柱子递减
+//                let fade = Float(/*40 - */visualIndex) / 40.0
+//                redistributedBass = kickImpact * fade
+//            }
             
             var raw: Float = 0.0
             
-            let fraction = log2(Float(bandCount - i)) / log2(Float(bandCount))
-            let weight =  exp(-pow(max(fraction, 1.0), 2.0))
-            
+//            let fraction = log2(Float(bandCount - visualIndex)) / log2(Float(bandCount))
+//            let weight =  exp(-pow(max(fraction, 1.0), 2.0))
+//            raw = mapped * weight
             if mapped < dynamicLowThresh {
                 // 1. 低能量区：暗部自适应抬升
-                raw *= pow(weight, 2.0)
-
-                let adaptiveBoost = (1.0 - avgEnergy) * 0.15
-                raw = mapped * (0.88 + adaptiveBoost) + redistributedBass
-                
+                let adaptiveBoost = (1.0 - avgEnergy) * 0.12
+                raw = mapped * (0.85 + adaptiveBoost) + kickImpact
+//                raw *= weight
             } else if mapped <= dynamicHighThresh {
-                // 🚀 2. 中能量区：经典的 Smoothstep S 曲线 ($3t^2 - 2t^3$) 配合动态对比度
+                // 🚀 2. 中能量区：丝滑的 Smoothstep S 曲线
                 let range = max(1e-5, dynamicHighThresh - dynamicLowThresh)
                 let t = min(max((mapped - dynamicLowThresh) / range, 0), 1)
                 
-                let sCurve = t * t * (3.0 - 2.0 * t) // 极其丝滑的 S 形过渡
+                let sCurve = t * t * (3.0 - 2.0 * t)
                 let minVal: Float = dynamicLowThresh
                 let maxVal: Float = dynamicHighThresh
                 
-                let midContrast = 0.85 + avgEnergy * 0.25
-                raw = minVal + (maxVal - minVal) * (sCurve * midContrast + pow(t, 1.3) * (1.0 - midContrast)) + redistributedBass
-
+                let midContrast = 0.90 + avgEnergy * 0.20
+                raw = minVal + (maxVal - minVal) * (sCurve * midContrast + pow(t, 1.2) * (1.0 - midContrast)) + kickImpact
+                
             } else {
-                // 3. 高能量区：动态指数爆发
+                // 3. 高能量区：动态指数爆发（对口哨、高音进行软压限保护）
                 let delta = mapped - dynamicHighThresh
-                raw = dynamicHighThresh + delta + pow(delta, 1.2) * (0.44 + avgEnergy * 0.2) + redistributedBass
-                if raw > dynamicHighThresh {
-                    raw = dynamicHighThresh + pow(raw - dynamicHighThresh, 1.2)
+                raw = dynamicHighThresh + delta + pow(delta, 1.15) * (0.4 + avgEnergy * 0.15) + kickImpact
+                if raw > 1.0 {
+                    raw = 1.0 + log1p((raw - 1.0) * 0.5) * 0.5
                 }
-//                raw = raw + delta * weight
             }
             
             // 时间轴上的 Attack / Release 平滑阻尼
@@ -303,7 +307,7 @@ class AudioManager: ObservableObject {
         var finalBands = [Float](repeating: 0, count: bandCount)
         for i in 0..<bandCount {
             var val = rawValues[i]
-
+            
             if val > 1.0 {
                 val = 1.0 + log1p((val - 1.0) * 0.7) * 0.72
             }
@@ -318,7 +322,7 @@ class AudioManager: ObservableObject {
             finalBands[i] = max(0.0, cleanVal)
         }
         
-        // ── 5. 横向粘滞流光拉扯（果冻般的横向呼吸联动） ──────────────────
+        // ── 5. 横向粘滞流光拉扯（0.03 的果冻联动系数保持不变） ──────────
         var coupledBands = finalBands
         let coupleFactor: Float = 0.03
         
@@ -337,8 +341,12 @@ class AudioManager: ObservableObject {
         }
         
         result = coupledBands
+        
+        // 🎯 【核心裁剪】：抛弃最两端各 8 个边缘杂音柱，把中间极其干净的 32 柱交付给 UI 渲染
+        final[0..<32] = result[8..<40]
+        
         prevBands = result
-        return result
+        return final
     }
     
     private func bins(band: Int, minFreq: Float, maxFreq: Float, sr: Float) -> (Int, Int) {
