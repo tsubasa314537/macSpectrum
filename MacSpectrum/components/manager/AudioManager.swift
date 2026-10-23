@@ -133,7 +133,7 @@ class AudioManager: ObservableObject {
         
         let currentTime = CACurrentMediaTime()
         // 🚀【核心节流】：限制最多每秒刷 60 次（约 0.016 秒），避免音频回调（每秒 86+ 次）把主线程塞爆
-        if currentTime - lastUIUpdateTime >= 0.02 {
+        if currentTime - lastUIUpdateTime >= 0.018 {
             lastUIUpdateTime = currentTime
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
@@ -214,20 +214,33 @@ class AudioManager: ObservableObject {
         let maxFreq: Float = 7500
         
         peak *= peakDecay
+        var avgAll: Float = 0.0
+        var mappedAll: Float = 0.0
         
         // ── 1. 提取低频核心（在 48 柱体系中，前 3 个 band 代表纯低音与踢鼓 Kick） ──
-        let energyBass = computeGaussianEnergy(centerBand: 0, rawMags: rawMags, minFreq: minFreq, maxFreq: maxFreq)
-        let normBass = energyBass / max(peak, 1e-10)
-        let dBBass = log2(max(normBass, 1e-10)) * 3.0103
-        let mappedBass = min(max((dBBass - noiseFloorDB) / (ceilingDB - noiseFloorDB), 0), 1)
+        for i in 0..<bandCount {
+            let energyAll = computeGaussianEnergy(centerBand: i,
+                                                   rawMags: rawMags,
+                                                   minFreq: minFreq,
+                                                   maxFreq: maxFreq)
+            let normAll = energyAll / max(peak, 1e-10)
+            let dBAll = log2(max(normAll, 1e-10)) * 3.0103
+            mappedAll += max(min(max((dBAll - noiseFloorDB) / (ceilingDB - noiseFloorDB), 0), 1), 0.01)
+        }
         
-        let rawKickImpact = max(0, mappedBass - prevBands[0])
-        let kickImpact = pow(rawKickImpact, 0.75) * 0.30 // 完美收敛的小区间增益
+        avgAll = mappedAll / Float(bandCount)
+        let prevAvg = prevBands.reduce(0, +) / Float(bandCount)
+        
+        let rawKickImpact = max(0, avgAll - prevAvg)
+//        if rawKickImpact > 0.01 {
+//            print("rawKickImpact=======\(rawKickImpact)")
+//        }
+        let kickImpact = pow(rawKickImpact, 0.5) * 0.30 // 完美收敛的小区间增益
         
         // ── 2. 第一波循环：计算 48 柱全频段能量，建立宏观自适应指标 ─────────────
         var totalEnergySum: Float = 0.0
         for i in 0..<bandCount {
-            let energy = computeGaussianEnergy(centerBand: i, rawMags: rawMags, minFreq: 180, maxFreq: 6000)
+            let energy = computeGaussianEnergy(centerBand: i, rawMags: rawMags, minFreq: 180, maxFreq: 5400)
             energies[i] = energy
             
             peak = max(peak, energy)
