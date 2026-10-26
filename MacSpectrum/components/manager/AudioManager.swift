@@ -210,7 +210,7 @@ class AudioManager: ObservableObject {
     
     // MARK: - 频段计算
     private func computeBands(rawMags: [Float], peak: inout Float) -> [Float] {
-        let minFreq: Float = 45
+        let minFreq: Float = 35
         let maxFreq: Float = 7500
         
         peak *= peakDecay
@@ -235,8 +235,9 @@ class AudioManager: ObservableObject {
 //        if rawKickImpact > 0.01 {
 //            print("rawKickImpact=======\(rawKickImpact)")
 //        }
-        let kickImpact = pow(rawKickImpact, 0.5) * 0.30 // 完美收敛的小区间增益
+//        let kickImpact = pow(rawKickImpact, 0.5) * 0.30 // 完美收敛的小区间增益
         
+        let kickImpact = pow(max(0, rawKickImpact), 1.6) * 0.25
         // ── 2. 第一波循环：计算 48 柱全频段能量，建立宏观自适应指标 ─────────────
         var totalEnergySum: Float = 0.0
         for i in 0..<bandCount {
@@ -266,26 +267,13 @@ class AudioManager: ObservableObject {
             let dB = log2(max(normalized, 1e-10)) * 3.0103
             let mapped = (dB - noiseFloorDB) / (ceilingDB - noiseFloorDB)
             
-            // 🎯 【坐标修正】：因为最终 UI 只取中间 [8..<40]，
-            // 我们让低音能量均匀注入到视觉的前 10 个柱子（即 48 柱的索引 8 到 18 附近）
-//            var redistributedBass: Float = 0.0
-//            let visualIndex = i - 8 // 映射到 UI 视角下的位置
-//            if visualIndex >= 0 && visualIndex < 40 {
-//                // 低音主要在左侧低频区绽放，随视觉柱子递减
-//                let fade = Float(/*40 - */visualIndex) / 40.0
-//                redistributedBass = kickImpact * fade
-//            }
             
             var raw: Float = 0.0
             
-//            let fraction = log2(Float(bandCount - visualIndex)) / log2(Float(bandCount))
-//            let weight =  exp(-pow(max(fraction, 1.0), 2.0))
-//            raw = mapped * weight
             if mapped < dynamicLowThresh {
                 // 1. 低能量区：暗部自适应抬升
                 let adaptiveBoost = (1.0 - avgEnergy) * 0.12
                 raw = mapped * (0.85 + adaptiveBoost) + kickImpact
-//                raw *= weight
             } else if mapped <= dynamicHighThresh {
                 // 🚀 2. 中能量区：丝滑的 Smoothstep S 曲线
                 let range = max(1e-5, dynamicHighThresh - dynamicLowThresh)

@@ -17,7 +17,7 @@ struct MainPlayerView: View {
     @State private var playlists: [Playlist] = []
     @State private var selectedPlaylist: Playlist?
     
-    @State private var lyricShown = true
+    @State private var lyricShown = false
     
     // 1. 获取当前系统登录用户的 Documents 目录真实路径
     let documentURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
@@ -113,7 +113,19 @@ struct MainPlayerView: View {
             // 全局快捷键大总管
             NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+//                print("code===\(event.keyCode)")
                 switch event.keyCode {
+                    case 8:
+                        if player.isAutopilotMode && modifiers == .command {
+                            if player.themeType == "black" {
+                                player.themeType = "white"
+                            } else {
+                                player.themeType = "black"
+                            }
+                            return nil
+                        }
+                        
+                        return event
                     case 37:
                         if modifiers == .command && !player.isAutopilotMode {
                             lyricShown.toggle()

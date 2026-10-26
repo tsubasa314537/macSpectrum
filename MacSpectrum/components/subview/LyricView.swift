@@ -45,11 +45,11 @@ struct LyricView: View {
                                     .font(.system(size: isCurrent ? 20 : 15, weight: isCurrent ? .bold : .medium, design: .rounded))
                                 // ✨ 极其惊艳的高光联动：
                                 // 唱到的那一行，直接亮起当前歌曲提取出来的专辑灵魂色！没唱到的根据主题黑白变淡！
-                                    .foregroundColor(isCurrent ? palette.bgPalette : .white
-                                        /*(themeType == "black" ? .white.opacity(0.4) : .black.opacity(0.4))*/)
+                                    .foregroundColor(isCurrent ? palette.bgPalette : //.white
+                                        (themeType == "black" ? .white.opacity(0.4) : .black.opacity(0.4)))
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 20)
-                                    .scaleEffect(isCurrent ? 1.05 : 1.0) // 轻微膨胀呼吸感
+//                                    .scaleEffect(isCurrent ? 1.05 : 1.0) // 轻微膨胀呼吸感
 //                                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: isCurrent) // 极佳的弹性动画
                                     .id(line.id) // 给每一行打上身份证，方便爆破滚动
                             }
