@@ -210,7 +210,7 @@ class AudioManager: ObservableObject {
     
     // MARK: - 频段计算
     private func computeBands(rawMags: [Float], peak: inout Float) -> [Float] {
-        let minFreq: Float = 35
+        let minFreq: Float = 45
         let maxFreq: Float = 7500
         
         peak *= peakDecay
@@ -235,9 +235,9 @@ class AudioManager: ObservableObject {
 //        if rawKickImpact > 0.01 {
 //            print("rawKickImpact=======\(rawKickImpact)")
 //        }
-//        let kickImpact = pow(rawKickImpact, 0.5) * 0.30 // 完美收敛的小区间增益
+        let kickImpact = pow(rawKickImpact, 0.5) * 0.30 // 完美收敛的小区间增益
         
-        let kickImpact = pow(max(0, rawKickImpact), 1.6) * 0.25
+//        let kickImpact = pow(max(0, rawKickImpact), 1.6) * 0.25
         // ── 2. 第一波循环：计算 48 柱全频段能量，建立宏观自适应指标 ─────────────
         var totalEnergySum: Float = 0.0
         for i in 0..<bandCount {
