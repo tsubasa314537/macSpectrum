@@ -7,7 +7,8 @@ import CoreAudio
 class AudioManager: ObservableObject {
     
     private let fftSize   = 2048
-    private let bandCount = 48
+    private let bandCount = 56
+    private let bassBandCount = 10
     private var fftSetup: FFTSetup?
     
     private var playerNode: AVAudioPlayerNode?
@@ -21,6 +22,7 @@ class AudioManager: ObservableObject {
     private var ringBufferL: [Float]
     private var ringBufferR: [Float]
     private var prevBands: [Float]
+    private var prevBassAll: Float = 0.0
     private var writeIndex: Int = 0
     
     private var peakL: Float = 1e-6
@@ -55,7 +57,7 @@ class AudioManager: ObservableObject {
     init() {
         let log2n = vDSP_Length(log2(Float(fftSize)))
         result   = [Float](repeating: 0, count: bandCount)
-        final   = [Float](repeating: 0, count: bandCount - 16)
+        final   = [Float](repeating: 0, count: bandCount - 24)
         energies = [Float](repeating: 0, count: bandCount)
         
         leftMagnitudes = Array(repeating: 0, count: bandCount)
@@ -66,8 +68,8 @@ class AudioManager: ObservableObject {
         
         ringBufferL = Array(repeating: 0, count: fftSize)
         ringBufferR = Array(repeating: 0, count: fftSize)
-        prevBands = Array(repeating: 0, count: fftSize)
-        
+        prevBands = Array(repeating: 0, count: bandCount)
+
         // 🚀 预分配与预计算
         samplesL = Array(repeating: 0, count: fftSize)
         samplesR = Array(repeating: 0, count: fftSize)
@@ -210,15 +212,14 @@ class AudioManager: ObservableObject {
     
     // MARK: - 频段计算
     private func computeBands(rawMags: [Float], peak: inout Float) -> [Float] {
-        let minFreq: Float = 45
-        let maxFreq: Float = 7500
+        let minFreq: Float = 35
+        let maxFreq: Float = 800
         
         peak *= peakDecay
         var avgAll: Float = 0.0
         var mappedAll: Float = 0.0
-        
         // ── 1. 提取低频核心（在 48 柱体系中，前 3 个 band 代表纯低音与踢鼓 Kick） ──
-        for i in 0..<bandCount {
+        for i in 0..<bassBandCount {
             let energyAll = computeGaussianEnergy(centerBand: i,
                                                    rawMags: rawMags,
                                                    minFreq: minFreq,
@@ -228,16 +229,17 @@ class AudioManager: ObservableObject {
             mappedAll += max(min(max((dBAll - noiseFloorDB) / (ceilingDB - noiseFloorDB), 0), 1), 0.01)
         }
         
-        avgAll = mappedAll / Float(bandCount)
-        let prevAvg = prevBands.reduce(0, +) / Float(bandCount)
+        avgAll = mappedAll / Float(bassBandCount)
+//        let prevAvg = prevBassBands.reduce(0, +) / Float(bassBandCount)
         
-        let rawKickImpact = max(0, avgAll - prevAvg)
-//        if rawKickImpact > 0.01 {
+        let rawKickImpact = max(0, avgAll - prevBassAll)
+//        if rawKickImpact > 0.1 {
 //            print("rawKickImpact=======\(rawKickImpact)")
 //        }
-        let kickImpact = pow(rawKickImpact, 0.5) * 0.30 // 完美收敛的小区间增益
+        prevBassAll = avgAll
+//        let kickImpact = pow(rawKickImpact, 0.5) * 0.30 // 完美收敛的小区间增益
         
-//        let kickImpact = pow(max(0, rawKickImpact), 1.6) * 0.25
+        let kickImpact = pow(max(0, rawKickImpact), 1.6) * 0.30
         // ── 2. 第一波循环：计算 48 柱全频段能量，建立宏观自适应指标 ─────────────
         var totalEnergySum: Float = 0.0
         for i in 0..<bandCount {
@@ -344,7 +346,7 @@ class AudioManager: ObservableObject {
         result = coupledBands
         
         // 🎯 【核心裁剪】：抛弃最两端各 8 个边缘杂音柱，把中间极其干净的 32 柱交付给 UI 渲染
-        final[0..<32] = result[8..<40]
+        final[0..<32] = result[4..<36]
         
         prevBands = result
         return final
