@@ -18,6 +18,8 @@ class PaletteManager: ObservableObject {
         high: .cyan
     )
     
+    // 🎯 全局强调色：统一取 currentPalette.high（预置霓虹色相）。
+    // 黑主题下高饱、高亮，在暗背景上跳色；灰白主题下依然使用 high，保证与原版一致。
     @Published var bgPalette = Color(.cyan)
     
     private var fromPalette: SpectrumPalette?
@@ -194,6 +196,12 @@ class PaletteManager: ObservableObject {
             t: position
         )
         return color.opacity(0.4 + intensity * 0.6)
+    }
+    
+    // 🎨 光柱专用色源：统一取 currentPalette.high（与 bgPalette 同），保证主题语义全局一致。
+    // 保留原函数签名以免调点变动。
+    func barColor(position: Double, intensity: Double, themeType: String, isAutopilot: Bool) -> Color {
+        return bgPalette.opacity(0.4 + intensity * 0.6)
     }
     
     private func interpolate(from: Color, to: Color, t: Double) -> Color {

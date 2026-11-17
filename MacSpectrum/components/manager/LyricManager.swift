@@ -12,6 +12,11 @@ class LyricManager: ObservableObject {
     @Published var lyrics: [LyricLine] = []
     @Published var currentLineId: UUID? = nil
     
+    // ⏱️ 手动时序偏移量（仅 NowPlayingView 中可调）。
+    // 以“加到 currentTime 上”的方式参与匹配：offset 为正 → 匹配更晚的行（歌词提前）；offset 为负 → 匹配更早的行（歌词回退）。
+    // 上下方向键±0.5s 手动微调；loadLyric 切歌时重置为 0。
+    @Published var timeOffset: TimeInterval = 0
+    
     let lyricPath: String
     
     init(path: String) {
@@ -22,6 +27,8 @@ class LyricManager: ObservableObject {
     // 摘除 artist 参数，只用一整条 title 去盘它！
     func loadLyric(for songTitle: String) {
         self.lyrics = [] // 切歌时先清空
+        self.timeOffset = 0 // 上一首的偏移量不带到下一首
+//        self.currentLineId = nil
         
         let fileManager = FileManager.default
         let lyricsDirectoryURL = URL(fileURLWithPath: lyricPath)
@@ -131,12 +138,15 @@ class LyricManager: ObservableObject {
         // 别忘了最后按时间排个序，防止老歌词里有乱序的时间标签
          self.lyrics.sort { $0.time < $1.time }
     }
-    // ⏱️ 3. 动态时间轮询锚定
+    // ⏱️ 3. 动态时间轮询锁定
     func updateCurrentLine(currentTime: TimeInterval) {
         guard !lyrics.isEmpty else { return }
         
-        // 抓取当前播放时间“之后”的第一行歌词的索引
-        let index = lyrics.firstIndex { $0.time > currentTime }
+        // 应用手动偏移：adjustedTime = currentTime + timeOffset
+        let adjustedTime = currentTime + timeOffset
+        
+        // 抓取调整后时间“之后”的第一行歌词的索引
+        let index = lyrics.firstIndex { $0.time > adjustedTime }
         
         if let nextIndex = index {
             if nextIndex > 0 {
@@ -145,7 +155,7 @@ class LyricManager: ObservableObject {
                 currentLineId = lyrics.first?.id
             }
         } else {
-            // 如果currentTime已经比最后一行歌词的时间还大，说明在唱最后一句
+            // 如果 adjustedTime 已经比最后一行歌词的时间还大，说明在唱最后一句
             currentLineId = lyrics.last?.id
         }
     }

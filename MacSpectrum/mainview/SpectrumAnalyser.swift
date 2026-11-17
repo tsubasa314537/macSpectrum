@@ -23,6 +23,10 @@ struct SpectrumAnalyser: View {
     
     @Binding var themeType: String
     
+    // 是否处于 autopilot 极简模式。
+    // 该标记仅供调色盘色源选择使用：autopilot 下走 high 保留霓虹，主视图灰白下走 low 保证识别度。
+    var isAutopilot: Bool = false
+    
     var body: some View {
         ZStack {
             Color.clear
@@ -59,7 +63,12 @@ struct SpectrumAnalyser: View {
     private func bar(value: Float, colorPos: Double) -> some View {
         let intensity = CGFloat(value)//CGFloat(max(0.0, min(1.32, value)))
         let height = max(minHeight, intensity * maxHeight)
-        let baseColor = palette.color(position: colorPos, intensity: Double(value))
+        let baseColor = palette.barColor(
+            position: colorPos,
+            intensity: Double(value),
+            themeType: themeType,
+            isAutopilot: isAutopilot
+        )
         
         // 🚀 【核心巧思】：实时计算当前柱子的高度比例
         // 为了防止极端的边界情况导致除以 0，我们加个安全保护

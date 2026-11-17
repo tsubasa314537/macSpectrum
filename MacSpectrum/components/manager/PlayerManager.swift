@@ -28,6 +28,10 @@ class PlayerManager: ObservableObject {
     @Published var standardTheme: Bool = false
     @Published var themeType: String = "black"
     
+    // 🎚️ Now Playing 全屏页路由状态。
+    // 提到 PlayerManager 是为了让 MenuBarExtra 也能感知，从而在 NowPlaying 页下禁用与路由冲突的菜单项。
+    @Published var nowPlayingShown: Bool = false
+    
     //MARK: 播放引擎相关
     private var shuffledOrder: [Int] = []
     private var shufflePointer: Int = 0

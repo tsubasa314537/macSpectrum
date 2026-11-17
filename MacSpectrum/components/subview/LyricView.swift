@@ -16,53 +16,56 @@ struct LyricView: View {
     var body: some View {
         VStack {
             if lyricManager.lyrics.isEmpty {
-                // 🏖️ 防空洞兜底：没有歌词时，干净利落地显示歌名和歌手
+                // 🏖️ 防空洞兑底：没有歌词时，居中干净利落地显示歌名
                 VStack(spacing: 12) {
                     Spacer()
                     Text(player.currentSong?.title ?? "未知曲目")
-                        .font(.system(size: 22, weight: .bold, design: .rounded))
-//                        .foregroundColor(themeType == "black" ? .white : .black)
-                        .foregroundColor(.white)
-//                    Text(player.currentSong?.artist ?? "未知歌手")
-//                        .font(.system(size: 15))
-//                        .foregroundColor(.gray)
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .foregroundColor(themeType == "black" ? .white : .black)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                // 🌊 瀑布流歌词墙
+                // 🌊 瀑布流歌词墙：居中布局，当前行锁定到视口中央。
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: false) {
-                        VStack(spacing: 24) {
+                        VStack(spacing: 28) {
                             // 🧠 顶部垫高：确保第一句歌词也能滚到窗口的正中间
-                            Color.clear.frame(height: 180)
+                            Color.clear.frame(height: 200)
                             
                             ForEach(lyricManager.lyrics) { line in
                                 let isCurrent = lyricManager.currentLineId == line.id
                                 
                                 Text(line.text)
-                                // 🎨 大厂巧思：当前唱到的词放大加粗，没唱到的字变小变淡
-                                    .font(.system(size: isCurrent ? 20 : 15, weight: isCurrent ? .bold : .medium, design: .rounded))
-                                // ✨ 极其惊艳的高光联动：
-                                // 唱到的那一行，直接亮起当前歌曲提取出来的专辑灵魂色！没唱到的根据主题黑白变淡！
-                                    .foregroundColor(isCurrent ? palette.bgPalette : //.white
-                                        (themeType == "black" ? .white.opacity(0.4) : .black.opacity(0.4)))
+                                // 🎨 当前唱到的词放大加粗，没唱到的字变小变淡
+                                    .font(.system(size: isCurrent ? 28 : 20, weight: isCurrent ? .bold : .medium, design: .rounded))
+                                // ✨ 高光联动：唱到的那一行亮起专辑主题色；
+                                // 黑主题未唱行：白 + 0.4；灰白主题未唱行：纯黑。
+                                    .foregroundColor(isCurrent ? palette.bgPalette :
+                                        (themeType == "black" ? .white.opacity(0.4) : .black))
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 20)
-//                                    .scaleEffect(isCurrent ? 1.05 : 1.0) // 轻微膨胀呼吸感
-//                                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: isCurrent) // 极佳的弹性动画
-                                    .id(line.id) // 给每一行打上身份证，方便爆破滚动
+                                    .id(line.id) // 给每一行打上身份证，方便滚动定位
                             }
                             
                             // 底部垫高：确保最后一句也能滚到正中间
-                            Color.clear.frame(height: 180)
+                            Color.clear.frame(height: 200)
                         }
                     }
-                    // 🚀 【跳行核心核心】：只要唱到下一句，立刻丝滑追随滚动！
+                    // 🚀 跳行核心：只要唱到下一句，当前行锁定到视口中央。
                     .onChange(of: lyricManager.currentLineId) { _, nextId in
                         if let targetId = nextId {
                             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                                // anchor: .center 的意思是让当前歌词雷打不动地保持在右侧视图的正中央！
+                                proxy.scrollTo(targetId, anchor: .center)
+                            }
+                        }
+                    }
+                    // ⏱️ 手动偏移即时跟随：每次 timeOffset 变化，先按新偏移重算当前行，再滚动对齐。
+                    // 与上面 onChange(of: currentTime) 同款同步调用，是已验证可靠的重算路径。
+                    .onChange(of: lyricManager.timeOffset) { _, _ in
+                        lyricManager.updateCurrentLine(currentTime: player.currentTime)
+                        if let targetId = lyricManager.currentLineId {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                                 proxy.scrollTo(targetId, anchor: .center)
                             }
                         }

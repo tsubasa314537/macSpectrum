@@ -17,82 +17,66 @@ struct MainPlayerView: View {
     @State private var playlists: [Playlist] = []
     @State private var selectedPlaylist: Playlist?
     
-    @State private var lyricShown = false
-    
     // 1. 获取当前系统登录用户的 Documents 目录真实路径
     let documentURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     
     var body: some View {
         // 🚀 用一个大外壳包裹，确保生命周期（.onAppear）在全软件运行期间只加载一次，永不被摧毁
+        // 🎚️ 三态顶层路由：Now Playing（Cmd+N） / Autopilot 极简 / 主视图
         ZStack {
-            HStack(spacing: 0) {
-                if player.isAutopilotMode {
-                    VStack(spacing: 0) {
-                        if player.karaoke {
-                            if player.currentSong != nil {
-                                KaraokeLyricsView(
-                                    player: player,
-                                    lyricManager: lyricManager,
-                                    palette: palette
-                                )
-                                .frame(height: 120)
-                            } else {
-                                Text("让音乐带走时光...")
-                                    .foregroundColor(.gray)
-                            }
+            if player.nowPlayingShown {
+                NowPlayingView(
+                    player: player,
+                    palette: palette,
+                    lyricManager: lyricManager
+                )
+                .transition(.opacity)
+            } else if player.isAutopilotMode {
+                VStack(spacing: 0) {
+                    if player.karaoke {
+                        if player.currentSong != nil {
+                            KaraokeLyricsView(
+                                player: player,
+                                lyricManager: lyricManager,
+                                palette: palette
+                            )
+                            .frame(height: 120)
+                        } else {
+                            Text("让音乐带走时光...")
+                                .foregroundColor(.gray)
                         }
-                        
-                        SpectrumAnalyser(
-                            audio: player.spectrum,
-                            palette: palette,
-                            themeType: $player.themeType
-                        )
-                        .frame(height: 150)
-                        .padding(.vertical, 0)
                     }
-                } else {
-                    VStack(spacing: 0) {
-                        HStack(spacing: 0) {
-                            playlistView
-                                .frame(width: 200)
-                            
-                            songListView
-                            
-                            albumView
-                                .frame(width: 250)
-                        }
+                    
+                    SpectrumAnalyser(
+                        audio: player.spectrum,
+                        palette: palette,
+                        themeType: $player.themeType,
+                        isAutopilot: true
+                    )
+                    .frame(height: 150)
+                    .padding(.vertical, 0)
+                }
+            } else {
+                VStack(spacing: 0) {
+                    HStack(spacing: 0) {
+                        playlistView
+                            .frame(width: 200)
                         
-                        Divider()
+                        songListView
                         
-                        SpectrumAnalyser(
-                            audio: player.spectrum,
-                            palette: palette,
-                            themeType: $player.themeType
-                        )
-                        .frame(height: 150)
-                        .padding(.vertical, 0)
+                        albumView
+                            .frame(width: 250)
                     }
-                    .frame(width: 1050, height: 600)
                     
                     Divider()
-                    if lyricShown {
-                        LyricView(
-                            lyricManager: lyricManager,
-                            player: player,
-                            themeType: $player.themeType,
-                            palette: palette
-                        )
-                        .onAppear {
-                            if let title = player.currentSong?.title {
-                                lyricManager.loadLyric(for: title)
-                            }
-                        }
-                        .frame(width: 300)
-                        .background(Color.clear)
-                    }
+                    
+                    // 原底部的 SpectrumAnalyser 已迁移到 NowPlayingView，这里换成播控条。
+                    controlBar
                 }
+                .frame(width: 1050, height: 600)
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: player.nowPlayingShown)
         // 🚀 牢牢把全局监听挂在最外层 ZStack 壳子上，无论内部如何切换自动驾驶，快捷键永不失效！
         .onAppear {
             if let window = NSApplication.shared.windows.first {
@@ -126,9 +110,16 @@ struct MainPlayerView: View {
                         }
                         
                         return event
-                    case 37:
-                        if modifiers == .command && !player.isAutopilotMode {
-                            lyricShown.toggle()
+                    case 45: // Cmd + N：从主视图进入 Now Playing
+                        if modifiers == .command && !player.isAutopilotMode && !player.nowPlayingShown {
+                            player.nowPlayingShown = true
+                            return nil
+                        }
+                        return event
+                    case 53: // Esc：从 Now Playing 返回主视图，同时主题恢复 black。
+                        if player.nowPlayingShown {
+                            player.nowPlayingShown = false
+                            player.themeType = "black"
                             return nil
                         }
                         return event
@@ -138,8 +129,8 @@ struct MainPlayerView: View {
                             return nil
                         }
                         return event
-                    case 9: // Cmd + V
-                        if modifiers == .command {
+                    case 9: // Cmd + V（在 Now Playing 下屏蔽，避免与路由冲突）
+                        if modifiers == .command && !player.nowPlayingShown {
                             player.isAutopilotMode.toggle()
                             if !player.isAutopilotMode {
                                 player.themeType = "black"
@@ -151,8 +142,8 @@ struct MainPlayerView: View {
                             return nil
                         }
                         return event
-                    case 17: // Cmd + T
-                        if !player.isAutopilotMode && modifiers == .command {
+                    case 17: // Cmd + T（仅在 Now Playing 下生效）
+                        if !player.isAutopilotMode && player.nowPlayingShown && modifiers == .command {
                             if player.themeType == "black" {
                                 player.themeType = "white"
                                 player.standardTheme = false
@@ -160,7 +151,6 @@ struct MainPlayerView: View {
                                 player.themeType = "black"
                                 player.standardTheme = true
                             }
-                            player.standardTheme.toggle()
                             return nil
                         }
                         return event
@@ -174,6 +164,18 @@ struct MainPlayerView: View {
                     case 101, 124: // F9 或 右箭头
                         player.nextTrack()
                         return nil
+                    case 126: // ↑：仅 NowPlaying 下拦截，减时间 0.5s（重算+滚动交给 LyricView 的 onChange）
+                        if player.nowPlayingShown {
+                            lyricManager.timeOffset -= 0.5
+                            return nil
+                        }
+                        return event
+                    case 125: // ↓：仅 NowPlaying 下拦截，加时间 0.5s
+                        if player.nowPlayingShown {
+                            lyricManager.timeOffset += 0.5
+                            return nil
+                        }
+                        return event
                     default:
                         return event
                 }
@@ -344,5 +346,25 @@ struct MainPlayerView: View {
                     NSApp.keyWindow?.performDrag(with: NSApp.currentEvent!)
                 }
         )
+    }
+    
+    // MARK: - 播控条（取代原本主视图底部的 SpectrumAnalyser）
+    private var controlBar: some View {
+        HStack(spacing: 40) {
+            Button(action: { player.previousTrack() }) {
+                Image(systemName: "backward.fill").font(.title)
+            }
+            Button(action: { player.isPlaying ? player.pause() : player.resume() }) {
+                Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 60))
+            }
+            Button(action: { player.nextTrack() }) {
+                Image(systemName: "forward.fill").font(.title)
+            }
+        }
+        // macOS 默认 ButtonStyle 是 bordered，会带上一圈浅色背景；这里改为 plain 去掉背景。
+        .buttonStyle(.plain)
+        .foregroundColor(palette.bgPalette)
+        .padding()
     }
 }

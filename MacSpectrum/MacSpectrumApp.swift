@@ -62,14 +62,17 @@ struct MacSpectrumApp: App {
         }
         
         // ── 🏝️ Mac 专属状态任务栏（保持昨天的精致縮小版不变） ──
+        // ⚠️ 路由与主题切换限制：进入 NowPlayingView 后，与页路由冲突或与 Cmd+T 重复的菜单项全部置灰；
+        // 退出 NowPlayingView 后（Esc）这些菜单项自动恢复可用。
         MenuBarExtra {
             Toggle(isOn: $player.isAutopilotMode) {
                 Text("极简模式")
             }
+            .disabled(player.nowPlayingShown)
             Toggle(isOn: $player.karaoke) {
                 Text("卡啦OK")
             }
-            .disabled(!player.isAutopilotMode)
+            .disabled(!player.isAutopilotMode || player.nowPlayingShown)
             
             Divider()
             
@@ -87,6 +90,7 @@ struct MacSpectrumApp: App {
 //                    Image(systemName: player.themeType == "black" ? "|||" : "OOO")
                 }
             }
+            .disabled(player.nowPlayingShown)
             
             Divider()
             
