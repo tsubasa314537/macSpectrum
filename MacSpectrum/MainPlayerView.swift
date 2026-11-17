@@ -68,7 +68,7 @@ struct MainPlayerView: View {
                             .frame(width: 250)
                     }
                     
-                    Divider()
+//                    Divider()
                     
                     // 原底部的 SpectrumAnalyser 已迁移到 NowPlayingView，这里换成播控条。
                     controlBar
