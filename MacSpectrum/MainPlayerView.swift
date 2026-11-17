@@ -60,7 +60,7 @@ struct MainPlayerView: View {
                 VStack(spacing: 0) {
                     HStack(spacing: 0) {
                         playlistView
-                            .frame(width: 200)
+                            .frame(width: 267)
                         
                         songListView
                         
@@ -91,7 +91,7 @@ struct MainPlayerView: View {
             playlists = PlaylistLoader.load(from: player.songsURL.path, in: lrcDic)
             if let first = playlists.first {
                 selectedPlaylist = first
-                player.loadPlaylist(songs: first.songs)
+                player.loadPlaylist(songs: first.songs, name: first.name)
             }
             
             // 全局快捷键大总管
@@ -244,18 +244,35 @@ struct MainPlayerView: View {
         ScrollViewReader { proxy in
             List(playlists) { playlist in
                 let selected = selectedPlaylist?.id == playlist.id
-                Text(selected ? "\(playlist.name)  •" : playlist.name)
-                    .font(.system(size: 15, weight: .regular, design: .rounded))
-                    .foregroundColor(forColor(nowPlaying: selected))
-                    .onTapGesture {
-                        selectedPlaylist = playlist
-                        if let plylst = selectedPlaylist?.songs {
-                            player.loadPlaylist(songs: plylst)
-                        }
+                HStack(spacing: 10) {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(selected ? palette.bgPalette : secondaryColor)
+                        .frame(width: 20)
+                    Text(playlist.name)
+                        .font(.system(size: 15, weight: selected ? .semibold : .regular, design: .rounded))
+                        .foregroundColor(selected ? palette.bgPalette : primaryColor)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(selected ? palette.bgPalette.opacity(0.16) : Color.clear)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectedPlaylist = playlist
+                    if let plylst = selectedPlaylist?.songs {
+                        player.loadPlaylist(songs: plylst, name: playlist.name)
                     }
-                    .cornerRadius(8)
-                    .listRowBackground(Color.clear)
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
             }
+            .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .onChange(of: selectedPlaylist?.id) { _, newID in
                 guard let targetID = newID else { return }
@@ -275,15 +292,33 @@ struct MainPlayerView: View {
         ScrollViewReader { proxy in
             List(selectedPlaylist?.songs ?? []) { song in
                 let nowPlaying = player.currentSong?.id == song.id
-                Text(nowPlaying ? "\(song.title)  ▶︎" : song.title)
-                    .font(.system(size: 15, weight: .regular, design: .rounded))
-                    .foregroundColor(forColor(nowPlaying: nowPlaying))
-                    .onTapGesture {
-                        player.play(song: song)
-                    }
-                    .listRowBackground(Color.clear)
-                    .id(song.id)
+                HStack(spacing: 10) {
+                    Image(systemName: nowPlaying ? "speaker.wave.2.fill" : "music.note")
+                        .font(.system(size: 12))
+                        .foregroundColor(nowPlaying ? palette.bgPalette : secondaryColor)
+                        .frame(width: 20)
+                    Text(song.title)
+                        .font(.system(size: 15, weight: nowPlaying ? .semibold : .regular, design: .rounded))
+                        .foregroundColor(nowPlaying ? palette.bgPalette : primaryColor)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(nowPlaying ? palette.bgPalette.opacity(0.16) : Color.clear)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    player.play(song: song)
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+                .id(song.id)
             }
+            .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .onChange(of: player.currentSong?.id) { _, newID in
                 guard let targetID = newID else { return }
@@ -299,12 +334,12 @@ struct MainPlayerView: View {
         }
     }
     
-    private func forColor(nowPlaying: Bool) -> Color {
-        if nowPlaying {
-            return palette.bgPalette
-        } else {
-            return player.themeType == "black" ? Color.white : Color.black
-        }
+    // 🎨 主/次文字色：黑主题白字、灰白主题黑字；次色用于未选中行的图标与弱化文字。
+    private var primaryColor: Color {
+        player.themeType == "black" ? .white : .black
+    }
+    private var secondaryColor: Color {
+        player.themeType == "black" ? Color.white.opacity(0.55) : Color.black.opacity(0.55)
     }
     
     private var albumView: some View {

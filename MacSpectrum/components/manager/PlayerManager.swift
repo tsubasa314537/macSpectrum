@@ -55,6 +55,8 @@ class PlayerManager: ObservableObject {
     //当前播放列表及当前位移
     @Published var currentPlaylist: [Song] = []
     @Published var currentIndex: Int = 0
+    // 🏷️ 当前歌单名字（供 NowPlayingView 侧滑面板标题显示）。loadPlaylist 时随 songs 一起写入。
+    @Published var currentPlaylistName: String = ""
     
     private var playToken = 0
     @Published var albumImages: [NSImage] = []
@@ -430,8 +432,9 @@ class PlayerManager: ObservableObject {
     }
 
     // MARK: - 加载歌单
-    func loadPlaylist(songs: [Song]) {
+    func loadPlaylist(songs: [Song], name: String = "") {
         currentPlaylist = songs
+        currentPlaylistName = name
         currentIndex = 0
         generateShuffleOrder()
     }

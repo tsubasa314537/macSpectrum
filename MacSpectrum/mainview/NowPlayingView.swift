@@ -23,6 +23,9 @@ struct NowPlayingView: View {
     // ⏱️ 偏移提示闪现控制：每次 timeOffset 变化后显示 1s 自动消失。
     @State private var showOffsetHint: Bool = false
     
+    // 📜 当前歌单侧滑面板的开关。
+    @State private var showPlaylist: Bool = false
+    
     var body: some View {
         VStack(spacing: 0) {
             // ── 上半区：歌词 + 旋转唱片 ─────────────────────────────
@@ -55,6 +58,21 @@ struct NowPlayingView: View {
                 )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 🎚️ 唱片下方的「歌单」小按钮：点开右侧滑出当前歌单列表。
+            .overlay(alignment: .bottomTrailing) {
+                Button {
+                    showPlaylist.toggle()
+                } label: {
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundColor(player.themeType == "black" ? .white : .black)
+                        .frame(width: 42, height: 42)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 20)
+                .padding(.bottom, 16)
+            }
 //            Divider()
             
             // ── 下半区：光柱 ───────────────────────────────────────
@@ -70,6 +88,25 @@ struct NowPlayingView: View {
         // 避免之前 frame(height: 600) 被 ZStack 居中布局顶起 14pt 导致光柱不贴底。
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(.container, edges: .top)
+        // 📜 右侧滑出的当前歌单面板 + 点击外部关闭的透明遮罩。
+        .overlay {
+            if showPlaylist {
+                ZStack(alignment: .trailing) {
+                    // 透明遮罩：铺满整个正在播放 view，点它任意位置 → 收起面板。
+                    Color.primary.opacity(0.001)
+                        .contentShape(Rectangle())
+                        .onTapGesture { showPlaylist = false }
+                        .transition(.opacity)
+                    
+                    // 面板本体：贴右侧、全高，列出当前歌单，点任意歌曲直接播放（不关面板）。
+                    playlistPanel
+                        .frame(width: 320)
+                        .frame(maxHeight: .infinity)
+                        .transition(.move(edge: .trailing))
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.28), value: showPlaylist)
         // ⏱️ 手动偏移提示：每次按 ↑/↓ 后闪现 1s 自动消失（挂在最外层，不碰 ScrollView 区域）。
         .overlay(alignment: .bottomLeading) {
             if showOffsetHint {
@@ -112,6 +149,54 @@ struct NowPlayingView: View {
         // 这里补上同样的联动，保证切歌后专辑主色重新提取、背景模糊专辑与主题色同步刷新。
         .onChange(of: player.albumImages) { _, _ in
             updatePalette()
+        }
+    }
+    
+    // 📜 右侧滑出的当前歌单面板：点任意歌曲直接播放，面板不关（靠外部遮罩关闭）。
+    private var playlistPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(player.currentPlaylistName.isEmpty ? "当前歌单" : player.currentPlaylistName)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundColor(player.themeType == "black" ? .white : .black)
+                Spacer()
+                Text("\(player.currentPlaylist.count) 首")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundColor(player.themeType == "black" ? Color.white.opacity(0.5) : Color.black.opacity(0.5))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            
+            Divider().opacity(0.4)
+            
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    ForEach(player.currentPlaylist) { song in
+                        let nowPlaying = player.currentSong?.id == song.id
+                        HStack(spacing: 8) {
+                            Image(systemName: nowPlaying ? "speaker.wave.2.fill" : "music.note")
+                                .font(.system(size: 11))
+                                .foregroundColor(nowPlaying ? palette.bgPalette : (player.themeType == "black" ? Color.white.opacity(0.4) : Color.black.opacity(0.4)))
+                                .frame(width: 16)
+                            Text(song.title)
+                                .font(.system(size: 14, weight: nowPlaying ? .semibold : .regular, design: .rounded))
+                                .foregroundColor(nowPlaying ? palette.bgPalette : (player.themeType == "black" ? .white : .black))
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                        .onTapGesture { player.play(song: song) }
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(.regularMaterial)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1)
         }
     }
     
@@ -194,12 +279,12 @@ private struct RotatingAlbumView: View {
                 .clipShape(Circle())
                 
                 // 中心圆孔
-                Circle()
-                    .fill(Color.black)
-                    .frame(width: 26, height: 26)
-                Circle()
-                    .stroke(palette.bgPalette.opacity(0.6), lineWidth: 1.5)
-                    .frame(width: 26, height: 26)
+//                Circle()
+//                    .fill(Color.black)
+//                    .frame(width: 26, height: 26)
+//                Circle()
+//                    .stroke(palette.bgPalette.opacity(0.6), lineWidth: 1.5)
+//                    .frame(width: 26, height: 26)
             }
             .frame(width: discSize, height: discSize)
             // 🚀 静态圆盘一次栅格化为 GPU 纹理（无 ScrollView，安全）。
