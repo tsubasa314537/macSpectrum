@@ -62,9 +62,17 @@ struct MacSpectrumApp: App {
         }
         
         // ── 🏝️ Mac 专属状态任务栏（保持昨天的精致縮小版不变） ──
-        // ⚠️ 路由与主题切换限制：进入 NowPlayingView 后，与页路由冲突或与 Cmd+T 重复的菜单项全部置灰；
-        // 退出 NowPlayingView 后（Esc）这些菜单项自动恢复可用。
+        // ⚠️ 路由与主题切换限制：主题切换（魔幻光柱/动感圈圈 + Cmd+T）只在 NowPlayingView 内有效，
+        // 故在主视图/极简模式下置灰；极简、卡啦OK 则相反，进入 NowPlayingView 后置灰。
         MenuBarExtra {
+            // 📍 页路由：从主视图进入正在播放页（与 Cmd+N 同一入口，置灰条件保持一致）。
+            Button("正在播放") {
+                player.nowPlayingShown = true
+            }
+            .disabled(player.isAutopilotMode || player.nowPlayingShown)
+            
+            Divider()
+            
             Toggle(isOn: $player.isAutopilotMode) {
                 Text("极简模式")
             }
@@ -76,6 +84,8 @@ struct MacSpectrumApp: App {
             
             Divider()
             
+            // 🎚️ 主题切换：与 Cmd+T 完全对齐 —— 仅正在播放页可用，主视图/极简模式下置灰。
+            // （nowPlayingShown 与 isAutopilotMode 互斥，故只判 nowPlayingShown 就等价于 Cmd+T 的条件。）
             Button(action: {
                 if player.themeType == "black" {
                     player.themeType = "white"
@@ -90,7 +100,7 @@ struct MacSpectrumApp: App {
 //                    Image(systemName: player.themeType == "black" ? "|||" : "OOO")
                 }
             }
-            .disabled(player.nowPlayingShown)
+            .disabled(!player.nowPlayingShown)
             
             Divider()
             

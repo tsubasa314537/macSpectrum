@@ -18,9 +18,20 @@ class PaletteManager: ObservableObject {
         high: .cyan
     )
     
-    // 🎯 全局强调色：统一取 currentPalette.high（预置霓虹色相）。
-    // 黑主题下高饱、高亮，在暗背景上跳色；灰白主题下依然使用 high，保证与原版一致。
-    @Published var bgPalette = Color(.cyan)
+    // 🎯 当前主题表面。所有颜色都按"与底的感知亮度对比度"现算，所以切主题必须重算一遍。
+    @Published var surface: ThemeSurface = .dark
+    
+    // 🎨 引擎派生出的四色：core 柱体描边 / wash 极淡填充 / accent 文字级强调 / glow 光晕。
+    @Published private(set) var ink: ThemeInk = ThemeColorEngine.ink(
+        from: Color(hue: 0.08, saturation: 1.0, brightness: 1.0),
+        surface: .dark
+    )
+    
+    // 🎯 全局强调色：指向 ink.accent。
+    // 以前它是一个写死等于 currentPalette.high 的 @Published 存储属性，两套主题共用一套为纯黑底
+    // 设计的高亮霓虹色，于是灰白主题下明黄/冰川蓝直接看不见。改成按主题派生后，
+    // 歌词当前行、列表选中、标题等所有调用点自动获得主题适配。
+    var bgPalette: Color { ink.accent }
     
     private var fromPalette: SpectrumPalette?
     private var toPalette: SpectrumPalette?
@@ -37,7 +48,7 @@ class PaletteManager: ObservableObject {
         self.currentPalette = defaultPreset
         self.fromPalette = defaultPreset
         self.toPalette = defaultPreset
-        self.bgPalette = defaultPreset.high
+        self.ink = ThemeColorEngine.ink(from: defaultPreset.low, surface: self.surface)
     }
     
     deinit {
@@ -68,9 +79,7 @@ class PaletteManager: ObservableObject {
         self.fromPalette = self.currentPalette
         self.toPalette = randomPreset
         
-        DispatchQueue.main.async {
-            self.bgPalette = randomPreset.high
-        }
+        self.ink = ThemeColorEngine.ink(from: randomPreset.low, surface: self.surface)
         
         self.blendFactor = 0.0
         self.blendStart = Date()
@@ -133,8 +142,11 @@ class PaletteManager: ObservableObject {
             targetPreset = SpectrumPalette.all.first(where: { $0.name == "Plum" }) ?? targetPreset
         }
         
-        let baseLow = newColor
-        let dynamicPalette = SpectrumPalette(name: "Hybrid-\(targetPreset.name)", low: baseLow, high: targetPreset.high)
+        // 🎨 先拿专辑平均色，再往匹配到的预设色相上锚一小段：保留专辑身份，又借预设把脏色往正色带。
+        // 这个锚定后的颜色作为 palette.low 存下来，后续 blend 逐帧插值的也是它，ink 那么每帧跟着重算。
+        let anchored = ThemeColorEngine.anchor(album: newColor, toward: targetPreset.high, weight: 0.35)
+        let dynamicPalette = SpectrumPalette(name: "Hybrid-\(targetPreset.name)", low: anchored, high: targetPreset.high)
+        let targetInk = ThemeColorEngine.ink(from: anchored, surface: ThemeSurface.of(themeType: themeType))
         
         if !animated || fromPalette == nil {
             self.displayLinkTimer?.invalidate()
@@ -146,7 +158,8 @@ class PaletteManager: ObservableObject {
             self.blendFactor = 1.0
             
             DispatchQueue.main.async {
-                self.bgPalette = dynamicPalette.high
+                self.surface = ThemeSurface.of(themeType: themeType)
+                self.ink = targetInk
             }
             return
         }
@@ -154,10 +167,9 @@ class PaletteManager: ObservableObject {
         self.fromPalette = self.currentPalette
         self.toPalette = dynamicPalette
         
-        if let highP = self.toPalette?.high {
-            DispatchQueue.main.async {
-                self.bgPalette = highP
-            }
+        DispatchQueue.main.async {
+            self.surface = ThemeSurface.of(themeType: themeType)
+            self.ink = targetInk
         }
         
         self.blendFactor = 0.0
@@ -177,10 +189,15 @@ class PaletteManager: ObservableObject {
         let blendedLow = interpolate(from: from.low, to: to.low, t: progress)
         let blendedHigh = interpolate(from: from.high, to: to.high, t: progress)
         
+        // 🎨 颜色过渡期间逐帧重算 ink：插值走的是锚定后的源色(low)，所以换歌时强调色、
+        // 柱体色、光晕是一起平滑渐变的，而不是像以前那样 blend 完成瞬间跳色。
+        let blendedInk = ThemeColorEngine.ink(from: blendedLow, surface: self.surface)
+        
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.blendFactor = progress
             self.currentPalette = SpectrumPalette(name: "Blending", low: blendedLow, high: blendedHigh)
+            self.ink = blendedInk
             
             if progress >= 1.0 {
                 self.displayLinkTimer?.invalidate()
@@ -198,10 +215,52 @@ class PaletteManager: ObservableObject {
         return color.opacity(0.4 + intensity * 0.6)
     }
     
-    // 🎨 光柱专用色源：统一取 currentPalette.high（与 bgPalette 同），保证主题语义全局一致。
-    // 保留原函数签名以免调点变动。
+    // 🎨 光柱专用色源：以前 themeType / isAutopilot 两个参数是摆设，永远返回 bgPalette，
+    // 两套主题共用一组为黑底设计的颜色。现在直接吃按主题派生好的 ink。
     func barColor(position: Double, intensity: Double, themeType: String, isAutopilot: Bool) -> Color {
-        return bgPalette.opacity(0.4 + intensity * 0.6)
+        // ⚠️ 浅底不能沿用那套“低能量就压透明度”的招：core 的对比度是按满不透明度反解出来的，
+        // 再乘 0.45 会让安静部分的柱子直接被洗进背景里。深底 fade into black 很自然，浅底只留一点呼吸。
+        surface.isLight
+            ? ink.core.opacity(0.80 + intensity * 0.20)
+            : ink.core.opacity(0.45 + intensity * 0.55)
+    }
+
+    /// 变白曲线指数：>1 让中段留住颜色，只有能量真的顶到上限才泛白。
+    private let whiteCurve: Double = 1.35
+
+    /// 柱体"肚子"的主体色：按能量在 core → wash 之间插值。
+    ///
+    /// ⚠️ 这里的驱动量是**能量**，不是竖向位置。之前按位置把柱体分四层变浅是错的：
+    /// 那样一根安静的矮柱也会顶端发白，而一根满能量的柱除了顶部照样是深色。
+    /// QQ 白主题的真实逻辑是“能量越大 → 越高 → 肚子越大 → 整根越白”，
+    /// 所以它必须和 bulge（肚子宽度）用同一个驱动量，两者才能绑在一起变。
+    /// whiteness 直接取 0...1 原始值，不再额外叠加 opacity（core 的对比度是按满不透明度解出来的）。
+    /// 线性映射下 0.5 能量就已经褪到一半，整片频谱会看着像"往背景里淡出"；
+    /// 1.35 下 0.5 能量只走 0.39，而 1.0 能量仍然完整走到 wash。
+    func barBellyColor(whiteness: CGFloat) -> Color {
+        guard surface.isLight else { return ink.core }
+        let t = CGFloat(pow(min(max(whiteness, 0), 1), whiteCurve))
+        let c = ink.coreRGB, w = ink.washRGB
+        return Color(red: Double(c.r + (w.r - c.r) * t),
+                     green: Double(c.g + (w.g - c.g) * t),
+                     blue: Double(c.b + (w.b - c.b) * t))
+    }
+
+    /// 底部反光带用色：始终是那层极淡 tint，不随能量变。
+    var barWashColor: Color { ink.wash }
+
+    /// shadow / blur 用色。
+    /// 注：灰白主题下它只给柱内那层能量驱动的 blur 用；外层投影已改成中性黑
+    /// （用 glow 色做投影会和 blur 叠成一片黄雾，颜色应该只留在柱体里）。
+    var barGlowColor: Color { ink.glow }
+
+    // 🔁 主题切换时重算 ink。以前没有任何入口触发重算（updateAlbumColor 只在 onAppear / 换歌时调），
+    // 所以 Cmd+T 切到灰白后拿到的仍然是为黑底算的那套色。现由 MainPlayerView.onChange(of: themeType) 调。
+    func applyTheme(_ themeType: String) {
+        let next = ThemeSurface.of(themeType: themeType)
+        guard next != surface else { return }
+        surface = next
+        ink = ThemeColorEngine.ink(from: currentPalette.low, surface: next)
     }
     
     private func interpolate(from: Color, to: Color, t: Double) -> Color {

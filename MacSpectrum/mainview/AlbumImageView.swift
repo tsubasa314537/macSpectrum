@@ -83,12 +83,16 @@ struct AlbumImageView: View {
          let avgNSColor = albumImage.averageColor {
             // 1. 让背景分析器换上提取出来的真·平均色
             let extractedColor = Color(avgNSColor)
-            // 2. 让大排灯光谱主题开始平滑渐变
+            // 2. 直接切到新的专辑配色，不走 1.8s 渐变。
+            // 以前这里写的是 animated: player.isAutopilotMode，但 updateAlbumColor 开头就是
+            // `if isAutopilotActive { return }`——autopilot 开着的时候这个调用根本不会执行，
+            // 所以那个表达式永远只在 false 时生效。颜色渐变实际只由 startAutopilotColors
+            // 每 5s 一次的 triggerRandomAutopilotBlend 驱动，与专辑色无关。
             palette
                 .updateAlbumColor(
                     extractedColor,
                     themeType,
-                    animated: player.isAutopilotMode
+                    animated: false
                 )
         }
 #else
@@ -96,7 +100,8 @@ struct AlbumImageView: View {
         if let uiImage = UIImage(contentsOfFile: imagePath) {
             colorSelector.updatePalette(from: uiImage)
             let extractedColor = colorSelector.backgroundColor
-            palette.updateAlbumColor(extractedColor, themeType)
+            // iOS 分支同理：换歌直接变色，渐变留给 autopilot。
+            palette.updateAlbumColor(extractedColor, themeType, animated: false)
         }
 #endif
     }

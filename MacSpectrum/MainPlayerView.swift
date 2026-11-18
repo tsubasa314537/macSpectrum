@@ -94,6 +94,9 @@ struct MainPlayerView: View {
                 player.loadPlaylist(songs: first.songs, name: first.name)
             }
             
+            // 🎨 启动时先把当前主题同步给 palette，保证 ink 从一开始就是对着正确底色派生出来的。
+            palette.applyTheme(player.themeType)
+            
             // 全局快捷键大总管
             NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
                 let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -213,6 +216,11 @@ struct MainPlayerView: View {
                 window.center()
             }
         }
+        .onChange(of: player.themeType) { _, newTheme in
+            // 🎨 切主题必须重算派生色：以前没有任何入口触发重算，Cmd+T 切到灰白后
+            // 拿到的仍然是为纯黑底算的那套高亮色，浅色相直接隐进背景。
+            palette.applyTheme(newTheme)
+        }
         .background(
             Group {
                 if !player.isAutopilotMode {
@@ -223,17 +231,11 @@ struct MainPlayerView: View {
                         }
                         .ignoresSafeArea(.container, edges: .top)
                     } else {
-                        ZStack {
-                            Color(red: 0.75, green: 0.75, blue: 0.75)
-                            if let img = player.nowAlbum {
-                                Image(nsImage: img)
-                                    .resizable()
-                                    .blur(radius: 30, opaque: true)
-                                    .opacity(0.2)
-                                    .scaledToFill()
-                            }
-                        }
-                        .clipped()
+                        // 🎨 灰白主题底色：方案 A 从 #BFBFBF 提到近白（#F4F4F6）。
+                        // 极淡的 wash 只有在高亮底上才“长”得出来，这正是对标 QQ 音乐的前提。
+                        // 旧的「专辑图 blur(radius:30) + opacity(0.2)」模糊层已移除，日后重新设计配色时再说。
+                        ThemeSurface.light.background
+                            .ignoresSafeArea(.container, edges: .top)
                     }
                 }
             }
@@ -334,12 +336,13 @@ struct MainPlayerView: View {
         }
     }
     
-    // 🎨 主/次文字色：黑主题白字、灰白主题黑字；次色用于未选中行的图标与弱化文字。
+    // 🎨 主/次文字色：黑主题白字；灰白主题底色提到近白后，用接近黑的深灰代替纯黑、
+    // 中灰代替 0.55 黑，避免大面积15pt 正文在白底上过于死硬。
     private var primaryColor: Color {
-        player.themeType == "black" ? .white : .black
+        player.themeType == "black" ? .white : Color(white: 0.12)
     }
     private var secondaryColor: Color {
-        player.themeType == "black" ? Color.white.opacity(0.55) : Color.black.opacity(0.55)
+        player.themeType == "black" ? Color.white.opacity(0.55) : Color(white: 0.42)
     }
     
     private var albumView: some View {

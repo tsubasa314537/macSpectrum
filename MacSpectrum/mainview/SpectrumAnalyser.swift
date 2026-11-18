@@ -24,12 +24,29 @@ struct SpectrumAnalyser: View {
     @Binding var themeType: String
     
     // 是否处于 autopilot 极简模式。
-    // 该标记仅供调色盘色源选择使用：autopilot 下走 high 保留霓虹，主视图灰白下走 low 保证识别度。
+    // 色源已由 PaletteManager 按主题派生好（core/wash/accent/glow），此处仅作为上下文透传。
     var isAutopilot: Bool = false
     
     var body: some View {
         ZStack {
             Color.clear
+
+            // 🌊 灰白主题专属：底部一条由透到实的 wash 反光带，柱子像立在水面上。
+            // 放在 HStack 之前，所以它始终在柱体下方，不抢识别度。
+            if themeType != "black" {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    LinearGradient(
+                        colors: [palette.barWashColor.opacity(0.0), palette.barWashColor.opacity(0.70)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 16)
+                    .padding(.bottom, 3)
+                }
+                .allowsHitTesting(false)
+            }
+
             HStack(alignment: .bottom, spacing: 0) {
                 // ── 左声道 ─────────────────────────────────────────
                 HStack(alignment: .bottom, spacing: themeType == "black" ? barSpacingBlack : barSpacingWhite) {
@@ -93,10 +110,21 @@ struct SpectrumAnalyser: View {
                 intensity: intensity,
                 barWidth: barWidthWhite,
                 baseColor: baseColor,
+                // 变白用 ratio（和 CompositeEnergyBar 内部的 bulge 同一个公式）：
+                // 肚子变大与颜色变白必须共用一个驱动量，否则会出现“大肚子但不白”的错帧。
+                bellyColor: palette.barBellyColor(whiteness: ratio),
+                glowColor: palette.barGlowColor,
                 maxH: maxHeight,
                 minH: minHeight
             )
-            .shadow(color: baseColor.opacity(0.8), radius: blurRadius * 0.35, x: 0, y: 0)
+            // 光晕分两层，各管一件事：
+            // · 柱内的真 blur 跟能量走（radius 与不透明度都由 intensity 驱动）——负责“报的时候胖一圈”，
+            //   颜色也全由它提供；
+            // · 外层只是一道淡淡的黑色投影，给柱子一个落在背景上的重量感。
+            // 颜色不能跑到阴影里：以前用 glow 色做 shadow，会和柱内 blur 叠成一片黄，喧宾夺主。
+            // 取无偏移而不是 y:3：下偏的影会和底部 wash 反光带撞在一起，根部发浑。
+            // 成本上酷黑主题早就是 blur + shadow 双通道每根柱，这里持平。
+            .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 0)
         }
         
 

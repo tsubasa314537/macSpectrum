@@ -212,10 +212,12 @@ struct NowPlayingView: View {
         if let albumImage = image,
            let avgNSColor = albumImage.averageColor {
             let extractedColor = Color(avgNSColor)
+            // 🎨 animated: false —— 正在播放页换歌要的是“到新歌就直接变色”，不要 1.8s 渐变。
+            // 颜色渐变只留给 autopilot 极简模式（由 startAutopilotColors 每 5s 随机混色驱动）。
             palette.updateAlbumColor(
                 extractedColor,
                 player.themeType,
-                animated: player.isAutopilotMode
+                animated: false
             )
         }
     }
@@ -224,7 +226,7 @@ struct NowPlayingView: View {
 // MARK: - 黑胶唱片式旋转专辑图
 ///
 /// 渲染组成：
-/// 1. 黑胶外环（半透明深色亵底，本轮减淡，灰白主题上不至于死黑）
+/// 1. 黑胶外环（半透明深色衬底，本轮减淡，灰白主题上不至于死黑）
 /// 2. 多圈沟槽装饰环（白色略明显，营造唱片纹理）
 /// 3. 居中专辑封面（Circle mask）
 /// 4. 中心小圆孔 + 主题色细描边

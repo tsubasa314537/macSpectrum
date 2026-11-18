@@ -39,10 +39,10 @@ struct LyricView: View {
                                 Text(line.text)
                                 // 🎨 当前唱到的词放大加粗，没唱到的字变小变淡
                                     .font(.system(size: isCurrent ? 28 : 20, weight: isCurrent ? .bold : .medium, design: .rounded))
-                                // ✨ 高光联动：唱到的那一行亮起专辑主题色；
-                                // 黑主题未唱行：白 + 0.4；灰白主题未唱行：纯黑。
+                                // ✨ 高光联动：唱到的那一行亮起专辑强调色（已按主题反解对比度，灰白底上不会再发虚）；
+                                // 黑主题未唱行：白 + 0.4；灰白主题底色提到近白后，用深灰而不是纯黑，减轻压迫感。
                                     .foregroundColor(isCurrent ? palette.bgPalette :
-                                        (themeType == "black" ? .white.opacity(0.4) : .black))
+                                        (themeType == "black" ? .white.opacity(0.4) : Color(white: 0.38)))
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 20)
                                     .id(line.id) // 给每一行打上身份证，方便滚动定位
