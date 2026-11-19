@@ -13,6 +13,15 @@ struct LyricView: View {
     @Binding var themeType: String
     var palette: PaletteManager
     
+    /// 本首歌用哪套字体。歌词为空（没匹配到 LRC）时拿歌名去判，
+    /// 这样日语歌的假名标题也不会退回苹方（标题短，占比判据在小样本上不稳，
+    /// 但只有一个歌名时它已经是全部证据，判出来什么用什么）。
+    private var script: LyricScript {
+        lyricManager.lyrics.isEmpty
+            ? LyricFontPolicy.detect(player.currentSong?.title ?? "")
+            : lyricManager.script
+    }
+    
     var body: some View {
         VStack {
             if lyricManager.lyrics.isEmpty {
@@ -20,7 +29,7 @@ struct LyricView: View {
                 VStack(spacing: 12) {
                     Spacer()
                     Text(player.currentSong?.title ?? "未知曲目")
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .font(LyricFontPolicy.font(script, size: 30, emphasized: true))
                         .foregroundColor(themeType == "black" ? .white : .black)
                     Spacer()
                 }
@@ -37,8 +46,12 @@ struct LyricView: View {
                                 let isCurrent = lyricManager.currentLineId == line.id
                                 
                                 Text(line.text)
-                                // 🎨 当前唱到的词放大加粗，没唱到的字变小变淡
-                                    .font(.system(size: isCurrent ? 28 : 20, weight: isCurrent ? .bold : .medium, design: .rounded))
+                                // 🎨 当前唱到的词放大加粗，没唱到的字变小变淡。
+                                // 🔤 字体交给 LyricFontPolicy：日语歌走明朝体（未唱行 W3 / 当前行 W6），
+                                // 俄语歌走 Georgia，其余仍是原来的苹方 rounded。
+                                    .font(LyricFontPolicy.font(script,
+                                                                size: isCurrent ? 28 : 20,
+                                                                emphasized: isCurrent))
                                 // ✨ 高光联动：唱到的那一行亮起专辑强调色（已按主题反解对比度，灰白底上不会再发虚）；
                                 // 黑主题未唱行：白 + 0.4；灰白主题底色提到近白后，用深灰而不是纯黑，减轻压迫感。
                                     .foregroundColor(isCurrent ? palette.bgPalette :

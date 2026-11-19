@@ -11,6 +11,8 @@ import Foundation
 class LyricManager: ObservableObject {
     @Published var lyrics: [LyricLine] = []
     @Published var currentLineId: UUID? = nil
+    /// 整首歌的主导文字系统，在 parseLrc 末尾算一次。不逐行算，避免行间字体抖动。
+    @Published var script: LyricScript = .cjkLatin
     
     // ⏱️ 手动时序偏移量（仅 NowPlayingView 中可调）。
     // 以“加到 currentTime 上”的方式参与匹配：offset 为正 → 匹配更晚的行（歌词提前）；offset 为负 → 匹配更早的行（歌词回退）。
@@ -27,6 +29,7 @@ class LyricManager: ObservableObject {
     // 摘除 artist 参数，只用一整条 title 去盘它！
     func loadLyric(for songTitle: String) {
         self.lyrics = [] // 切歌时先清空
+        self.script = .cjkLatin // 上一首的字体判定不带到下一首
         self.timeOffset = 0 // 上一首的偏移量不带到下一首
 //        self.currentLineId = nil
         
@@ -137,6 +140,10 @@ class LyricManager: ObservableObject {
         
         // 别忘了最后按时间排个序，防止老歌词里有乱序的时间标签
          self.lyrics.sort { $0.time < $1.time }
+
+        // 🔤 判主导文字系统。放在这里而不是读取处：UTF-8 / GB18030 两条解码路径
+        // 都汇到这一个漏斗下游，判定看到的永远是最终上屏的那批文本。
+        script = LyricFontPolicy.detect(self.lyrics.map { $0.text }.joined(separator: "\n"))
     }
     // ⏱️ 3. 动态时间轮询锁定
     func updateCurrentLine(currentTime: TimeInterval) {

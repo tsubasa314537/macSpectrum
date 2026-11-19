@@ -37,6 +37,10 @@ struct MacSpectrumApp: App {
 
         self._lyric = StateObject(wrappedValue: LyricManager(path: lyricsDir.path))
 
+        // 🔤 把外部明朝体字面的解析/注册挡在启动阶段：它要读字体目录并注册 9MB 的 ttf，
+        // 几十毫秒，不该发生在第一首日文歌的歌词上屏那一刻。
+        LyricFontPolicy.prewarm()
+
     }
     
     var body: some Scene {

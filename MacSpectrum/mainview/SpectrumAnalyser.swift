@@ -103,7 +103,8 @@ struct SpectrumAnalyser: View {
                 .blur(radius: 1.5, opaque: false)
                 .shadow(color: baseColor.opacity(0.8), radius: blurRadius, x: 0, y: 0)
 //                .animation(.interactiveSpring(response: 0.15, dampingFraction: 0.66, blendDuration: 0), value: value)
-                .animation(.snappy(duration: 0.18, extraBounce: 0.18), value: value)
+//                .animation(.snappy(duration: 0.18, extraBounce: 0.18), value: value)
+                .animation(.linear(duration: 0.07), value: value)
         } else {
             CompositeEnergyBar(
                 height: height,

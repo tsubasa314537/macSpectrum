@@ -17,6 +17,21 @@ struct MainPlayerView: View {
     @State private var playlists: [Playlist] = []
     @State private var selectedPlaylist: Playlist?
     
+    // 🌫️ 待机呼吸：光柱已迁到正在播放页，主视图原本完全静止，这里给右上角的字样一点
+    // 不抢注意力的生命感。三个实现约束都是踩过的坑：
+    // ① 周期用真实时间算而不是 `.repeatForever(autoreverses:)`：后者会被任何一次无关状态
+    //    变化（切歌、选中行、面板开合）打断重置，节奏乱，回到主视图时相位还会跳。
+    // ② TimelineView 只包住这一个 Text。套在 body 外层会让整个 1050×600 列表以 60Hz 重算
+    //    body——那正是把“拖窗口连累别的窗口”的坑复制回来的方式。
+    // ③ 幅度 0.60 而不是摆到纯白：峰值变白会让字样当场丢掉主题身份，
+    //    橙→白→橙读起来是加载指示灯；而且黑底上的大幅明灭和“护眼”这个初衷直接冲突。
+    // ④ 周期 6s：幅度已经压到 0.60，峰值相对亮度只从 0.578 走到 0.831，
+    //    渐变范围本就窄，周期再长就读不出“在动”，只会读成“颜色不太一样”。
+    private let idleBreathPeriod: Double = 6
+    private let idleBreathAmplitude: Double = 0.60
+    /// 系统「减弱动态效果」开着时静止。只读一次，不能每帧去查。
+    @State private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    
     // 1. 获取当前系统登录用户的 Documents 目录真实路径
     let documentURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     
@@ -336,13 +351,24 @@ struct MainPlayerView: View {
         player.themeType == "black" ? Color.white.opacity(0.55) : Color(white: 0.42)
     }
     
-    private var albumView: some View {
-        VStack {
+    // 🌫️ 字样本体：相位由 TimelineView 给的真实时间算，颜色交给 palette。
+    private var wordmark: some View {
+        TimelineView(.animation(paused: reduceMotion)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            // 用余弦而不是三角波：线性往返在两个端点有速度突变，看着像“顿一下”，
+            // 余弦在峰谷处速度自然趋零，才读成“呼吸”。
+            let p = 0.5 - 0.5 * cos(2 * Double.pi * (t / idleBreathPeriod))
             Text("macSpectrum")
                 .font(.system(size: 28, weight: .semibold))
                 .bold()
-                .foregroundColor(palette.bgPalette)
-                .padding(.top, 30)
+                .foregroundColor(palette.wordmarkColor(phase: p, amplitude: idleBreathAmplitude))
+        }
+        .padding(.top, 30)
+    }
+    
+    private var albumView: some View {
+        VStack {
+            wordmark
             
             AlbumImageView(
                 images: player.albumImages,

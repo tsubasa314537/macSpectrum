@@ -285,6 +285,17 @@ class PaletteManager: ObservableObject {
         )
     }
 
+    /// 待机呼吸的字样色：从 accent（= bgPalette）往白色方向插值。
+    /// phase 取 0…1（0 = 最暗，1 = 峰位），amplitude 是最大掺白量。
+    /// 拿缓存分量做三次乘加，不走 Color → NSColor 反解——这个函数每秒会被调 60 次。
+    func wordmarkColor(phase: Double, amplitude: Double) -> Color {
+        let w = min(max(phase, 0), 1) * min(max(amplitude, 0), 1)
+        let c = ink.accentRGB
+        return Color(red: Double(c.r + (1 - c.r) * CGFloat(w)),
+                     green: Double(c.g + (1 - c.g) * CGFloat(w)),
+                     blue: Double(c.b + (1 - c.b) * CGFloat(w)))
+    }
+
     // 🔁 主题切换时重算 ink。以前没有任何入口触发重算（updateAlbumColor 只在 onAppear / 换歌时调），
     // 所以 Cmd+T 切到灰白后拿到的仍然是为黑底算的那套色。现由 MainPlayerView.onChange(of: themeType) 调。
     func applyTheme(_ themeType: String) {

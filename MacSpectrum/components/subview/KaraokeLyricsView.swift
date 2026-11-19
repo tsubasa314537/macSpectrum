@@ -45,7 +45,10 @@ struct KaraokeLyricsView: View {
             // -----------------------------------------------------------
             HStack {
                 Text(getLyricText(forLine: .odd))
-                    .font(.system(size: 40, weight: /*isLineActive(.odd) ? .bold : */.medium, design: .rounded))
+                    // 🔤 字体跟歌词文字系统走（日语→明朝、俄语→Georgia、其余→苹方 rounded）。
+                    // 这里统一用 emphasized：40pt 上 W3 会明显比原来的苹方 .medium 轻，
+                    // 大字需要 W6 / Georgia-Bold 把分量撑住。
+                    .font(LyricFontPolicy.font(lyricManager.script, size: 40, emphasized: true))
                     .foregroundColor(
                         /*isLineActive(.odd) ? .orange : */palette.bgPalette
                     ) // 激活时变亮（比如橙色），未激活时半透明
@@ -60,7 +63,7 @@ struct KaraokeLyricsView: View {
             HStack {
                 Spacer() // 🎯 强行右对齐
                 Text(getLyricText(forLine: .even))
-                    .font(.system(size: 40, weight: /*isLineActive(.even) ? .bold : */.medium, design: .rounded))
+                    .font(LyricFontPolicy.font(lyricManager.script, size: 40, emphasized: true))
                     .foregroundColor(/*isLineActive(.even) ? .orange : */palette.bgPalette)
 //                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: currentIndex)
             }

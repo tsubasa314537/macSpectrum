@@ -67,6 +67,9 @@ struct ThemeInk {
     /// 页面 tint 的分量缓存：背景渐变要一个中间档（tint 与页面各半），
     /// 走分量乘加而不是逐帧 NSColor 反解。
     let bgTintRGB: (r: CGFloat, g: CGFloat, b: CGFloat)
+    /// accent 的分量缓存（即 bgPalette）。字样呼吸要拿它往白色方向插值，
+    /// 这件事每秒要算 60 次，不能走 Color → NSColor 反解。
+    let accentRGB: (r: CGFloat, g: CGFloat, b: CGFloat)
 }
 
 // MARK: - 引擎
@@ -209,6 +212,7 @@ enum ThemeColorEngine {
         let coreRGB: (r: CGFloat, g: CGFloat, b: CGFloat)
         let washRGB: (r: CGFloat, g: CGFloat, b: CGFloat)
         let bgTintRGB: (r: CGFloat, g: CGFloat, b: CGFloat)
+        let accentRGB: (r: CGFloat, g: CGFloat, b: CGFloat)
 
         if surface.isLight {
             // 图形级 2.0:1 就够（光柱是高频运动的装饰元素，不是正文），文字级再要到 3.6:1。
@@ -219,6 +223,7 @@ enum ThemeColorEngine {
             core = color(hue: hue, sat: sat, bri: coreV)
             accent = color(hue: hue, sat: accentSat, bri: accentV)
             coreRGB = rgb(hue: hue, sat: sat, bri: coreV)
+            accentRGB = rgb(hue: hue, sat: accentSat, bri: accentV)
             // wash：极淡的一层 tint，在 #F4F4F6 上刚好读出"白里透着一点黄"——对标 QQ 的柱体肚子。
             wash = color(hue: hue, sat: 0.28, bri: 1.0)
             washRGB = rgb(hue: hue, sat: 0.28, bri: 1.0)
@@ -235,6 +240,7 @@ enum ThemeColorEngine {
             core = color(hue: hue, sat: coreSat, bri: 1.0)
             accent = color(hue: hue, sat: accentSat2, bri: 1.0)
             coreRGB = rgb(hue: hue, sat: coreSat, bri: 1.0)
+            accentRGB = rgb(hue: hue, sat: accentSat2, bri: 1.0)
             wash = color(hue: hue, sat: 0.55, bri: 0.45)
             washRGB = rgb(hue: hue, sat: 0.55, bri: 0.45)
             glow = core
@@ -244,7 +250,8 @@ enum ThemeColorEngine {
         }
 
         return ThemeInk(core: core, wash: wash, accent: accent, glow: glow, bgTint: bgTint,
-                        coreRGB: coreRGB, washRGB: washRGB, bgTintRGB: bgTintRGB)
+                        coreRGB: coreRGB, washRGB: washRGB, bgTintRGB: bgTintRGB,
+                        accentRGB: accentRGB)
     }
 
     /// 把专辑平均色往匹配到的预设色相上牵引一小段：保留专辑身份，又借预设这个"美化锚点"
