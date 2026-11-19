@@ -111,19 +111,19 @@ struct CompositeEnergyBar: View {
         // 画布宽度随能量放大（肚子要真的鼓出来），但外层占位仍是 barWidth，相邻柱不会被推开。
         let shapeWidth = barWidth * (0.90 + bulge * 0.70)
 
-        // 竖向渐变：两端 core、肚子 bellyColor 的“三明治”。
+        // 竖向渐变：椭圆整体吃能量白度，只有针尖锁 core。
         //
-        // 上一版把针尖做成了最白的一端，方向错了：针尖恰恰是跳动所在，
-        // 纯白底 + 黄色主题时 wash 几乎和背景同色，针尖直接看不见，
-        // 底部再扎实也出不来“光柱在动”的感觉。
-        // 所以泛白只发生在肚子（0.30 → 0.76，即椭圆体内），针尖回到与根部同一个 core。
-        // 能量依然驱动白度：bellyColor 越报越白，但两端不受能量影响。
+        // 两端都锁 core 是上一版的错：能量强的时候，肚子底下还顶着一圈主题色，
+        // “越大越白”被根部那圈深色卡住，看着像柱底没化开。现在椭圆（0 → 0.76）
+        // 整块都是 bellyColor，能量上去就是整块白下去。
+        //
+        // 针尖仍锁 core：那是跳动所在，纯白底 + 黄色主题时吃 wash 会和背景同色直接消失。
+        // 能量为 0 时 bellyColor 恰好等于 core，所以安静的矮柱依旧是实体色，不会丢“根部扎实”。
         let bodyGradient = LinearGradient(
             stops: [
-                .init(color: baseColor.opacity(0.95), location: 0.00),   // 根部：core
-                .init(color: bellyColor,              location: 0.30),   // 肚子中心：最白
-                .init(color: bellyColor,              location: 0.76),   // 椭圆上沿仍白，交接给针腿
-                .init(color: baseColor.opacity(0.95), location: 1.00)    // 针尖：回到与根部同色
+                .init(color: bellyColor,              location: 0.00),   // 椭圆底部：跟能量变白
+                .init(color: bellyColor,              location: 0.76),   // 椭圆上沿（ry = 0.38h）
+                .init(color: baseColor.opacity(0.95), location: 1.00)    // 针尖：锁 core
             ],
             startPoint: .bottom,
             endPoint: .top
@@ -137,7 +137,7 @@ struct CompositeEnergyBar: View {
                 .fill(glowColor.opacity(0.30 + intensity * 0.45))
                 .blur(radius: 1.4 + intensity * 3.2)
 
-            // ── 2. 实体填充：两端 core，肚子按能量泛白 ────────────
+            // ── 2. 实体填充：椭圆整块 bellyColor，针尖过渡到 core ────
             EnergySpindle(bulge: bulge)
                 .fill(bodyGradient)
 
