@@ -22,7 +22,7 @@ enum ThemeSurface: Equatable {
     private static let lightBackgroundRGB: (r: CGFloat, g: CGFloat, b: CGFloat) = (0.957, 0.957, 0.965)
     private static let darkBackgroundRGB: (r: CGFloat, g: CGFloat, b: CGFloat) = (0.02, 0.02, 0.03)
 
-    private var backgroundRGB: (r: CGFloat, g: CGFloat, b: CGFloat) {
+    var backgroundRGB: (r: CGFloat, g: CGFloat, b: CGFloat) {
         self == .dark ? Self.darkBackgroundRGB : Self.lightBackgroundRGB
     }
 
@@ -56,11 +56,17 @@ struct ThemeInk {
     /// shadow / blur 用色
     let glow: Color
 
+    /// 页面顶部那层互补色淡 tint。深色主题不 tint（等于底色），保持原有行为。
+    let bgTint: Color
+
     // core / wash 的 RGB 分量缓存：柱体要按能量在两者之间逐帧插值，
     // 如果每根柱都去走 Color → NSColor 反解，一帧就是几十次对象分配。
     // 在派生时顺手留下分量，混色就只剩三次乘加。
     let coreRGB: (r: CGFloat, g: CGFloat, b: CGFloat)
     let washRGB: (r: CGFloat, g: CGFloat, b: CGFloat)
+    /// 页面 tint 的分量缓存：背景渐变要一个中间档（tint 与页面各半），
+    /// 走分量乘加而不是逐帧 NSColor 反解。
+    let bgTintRGB: (r: CGFloat, g: CGFloat, b: CGFloat)
 }
 
 // MARK: - 引擎
@@ -159,9 +165,32 @@ enum ThemeColorEngine {
         return lo
     }
 
+    /// 互补色淡 tint 的**彩度预算**：亮度钉在 1.0，从纯白往下加彩度，直到相对亮度
+    /// 掉到当前页面底色为止。取这个上限，tint 就与页面**等亮度**，引擎为 2.0:1 / 3.6:1
+    /// 解出来的 core / accent 全部继续成立，不需要重算任何一个颜色。
+    ///
+    /// 副作用是预算随色相浮动很大（青 0.227 vs 蓝 0.066）——这不是缺陷，是“淡蓝本身
+    /// 就比淡青暗”的物理事实。写死一个饱和度反而会让蓝主题过重、黄主题看不见。
+    static func tintSat(hue: CGFloat, surface: ThemeSurface) -> CGFloat {
+        let floorL = surface.backgroundLuminance
+        var lo: CGFloat = 0, hi: CGFloat = 0.60
+        for _ in 0..<20 {
+            let mid = (lo + hi) / 2
+            if luminance(hue: hue, sat: mid, bri: 1.0) >= floorL { lo = mid } else { hi = mid }
+        }
+        return lo
+    }
+
+    /// 两个 RGB 分量的线性混色，t = 0 取 a。
+    static func mix(_ a: (r: CGFloat, g: CGFloat, b: CGFloat),
+                    _ b: (r: CGFloat, g: CGFloat, b: CGFloat),
+                    _ t: CGFloat) -> (r: CGFloat, g: CGFloat, b: CGFloat) {
+        (a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t)
+    }
+
     // ── 主入口 ──────────────────────────────────────────────
 
-    /// 把专辑平均色（已锚定过预设）按主题底派生成 core / wash / accent / glow。
+    /// 把专辑平均色（已锚定过预设）按主题底派生成 core / wash / accent / glow / bgTint。
     static func ink(from source: Color, surface: ThemeSurface) -> ThemeInk {
         let src = hsb(of: source)
 
@@ -176,8 +205,10 @@ enum ThemeColorEngine {
         let accent: Color
         let wash: Color
         let glow: Color
+        let bgTint: Color
         let coreRGB: (r: CGFloat, g: CGFloat, b: CGFloat)
         let washRGB: (r: CGFloat, g: CGFloat, b: CGFloat)
+        let bgTintRGB: (r: CGFloat, g: CGFloat, b: CGFloat)
 
         if surface.isLight {
             // 图形级 2.0:1 就够（光柱是高频运动的装饰元素，不是正文），文字级再要到 3.6:1。
@@ -192,6 +223,12 @@ enum ThemeColorEngine {
             wash = color(hue: hue, sat: 0.28, bri: 1.0)
             washRGB = rgb(hue: hue, sat: 0.28, bri: 1.0)
             glow = color(hue: hue, sat: min(sat, 0.72), bri: 1.0)
+            // 页面底的互补色 tint。色相取**锚定之后的 hue**（不是专辑原始色相），
+            // 否则 tint 会和光柱各奔东西；autopilot 每 5s 换主题色时这里跟着重算，tint 自动跟。
+            let tintHue = (hue + 0.5).truncatingRemainder(dividingBy: 1.0)
+            let tintSat = tintSat(hue: tintHue, surface: surface)
+            bgTint = color(hue: tintHue, sat: tintSat, bri: 1.0)
+            bgTintRGB = rgb(hue: tintHue, sat: tintSat, bri: 1.0)
         } else {
             let coreSat = darkSaturation(hue: hue, sat: sat, surface: surface, target: 3.0)
             let accentSat2 = darkSaturation(hue: hue, sat: accentSat, surface: surface, target: 4.5)
@@ -201,10 +238,13 @@ enum ThemeColorEngine {
             wash = color(hue: hue, sat: 0.55, bri: 0.45)
             washRGB = rgb(hue: hue, sat: 0.55, bri: 0.45)
             glow = core
+            // 深色主题先不 tint：黑底加互补色是另一套物理（tint 会直接吃掉光柱的暗部）。
+            bgTint = surface.background
+            bgTintRGB = surface.backgroundRGB
         }
 
-        return ThemeInk(core: core, wash: wash, accent: accent, glow: glow,
-                        coreRGB: coreRGB, washRGB: washRGB)
+        return ThemeInk(core: core, wash: wash, accent: accent, glow: glow, bgTint: bgTint,
+                        coreRGB: coreRGB, washRGB: washRGB, bgTintRGB: bgTintRGB)
     }
 
     /// 把专辑平均色往匹配到的预设色相上牵引一小段：保留专辑身份，又借预设这个"美化锚点"

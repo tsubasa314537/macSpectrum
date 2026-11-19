@@ -102,17 +102,6 @@ struct MainPlayerView: View {
                 let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 //                print("code===\(event.keyCode)")
                 switch event.keyCode {
-                    case 8:
-                        if player.isAutopilotMode && modifiers == .command {
-                            if player.themeType == "black" {
-                                player.themeType = "white"
-                            } else {
-                                player.themeType = "black"
-                            }
-                            return nil
-                        }
-                        
-                        return event
                     case 45: // Cmd + N：从主视图进入 Now Playing
                         if modifiers == .command && !player.isAutopilotMode && !player.nowPlayingShown {
                             player.nowPlayingShown = true
@@ -231,10 +220,12 @@ struct MainPlayerView: View {
                         }
                         .ignoresSafeArea(.container, edges: .top)
                     } else {
-                        // 🎨 灰白主题底色：方案 A 从 #BFBFBF 提到近白（#F4F4F6）。
-                        // 极淡的 wash 只有在高亮底上才“长”得出来，这正是对标 QQ 音乐的前提。
-                        // 旧的「专辑图 blur(radius:30) + opacity(0.2)」模糊层已移除，日后重新设计配色时再说。
-                        ThemeSurface.light.background
+                        // 🎨 灰白主题底色：不再是一整块 #F4F4F6。
+                        // 顶部压一层主题色的互补色淡 tint，往下衰减，到光柱区（约 0.78 以下）回到纯页面色。
+                        // tint 与页面等亮度，所以不会动到任何已解好的对比度；具体三个约束见
+                        // PaletteManager.backgroundGradient。
+                        // 旧的「专辑图 blur(radius:30) + opacity(0.2)」模糊层仍保持移除，作为本方案效果不理想的兜底。
+                        palette.backgroundGradient
                             .ignoresSafeArea(.container, edges: .top)
                     }
                 }

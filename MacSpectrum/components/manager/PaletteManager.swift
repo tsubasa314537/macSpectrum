@@ -254,6 +254,37 @@ class PaletteManager: ObservableObject {
     /// （用 glow 色做投影会和 blur 叠成一片黄雾，颜色应该只留在柱体里）。
     var barGlowColor: Color { ink.glow }
 
+    /// 灰白主题的页面底渐变：顶部压一层主题色的**互补色**淡 tint，往下衰减，到光柱区回到纯页面色。
+    ///
+    /// 三个设计约束，缺一不可：
+    /// ① tint 与页面**等亮度**（ThemeColorEngine.tintSat 解出来的），所以 core / accent 现有的
+    ///    2.0:1 / 3.6:1 目标全部继续成立，不需要重算任何一个颜色；
+    /// ② 底部必须回到无色——最下面 16pt 是 wash 反光带，那是主题色的半透明平铺，
+    ///    和互补底在全强度下相遇会互相抵消成灰米色；
+    /// ③ 用连续梯度而不是硬边——割裂感的真来源是硬边，不是“有色”。
+    ///
+    /// 0.42 处插一个“tint 与页面各半”的中间档，是为了让上半段慢降、下半段收平；
+    /// 只有两端的双档会读成“上面刷了一块色”，三档才读成“空气里有颜色”。
+    var backgroundGradient: LinearGradient {
+        let pageRGB = surface.backgroundRGB
+        let midRGB = ThemeColorEngine.mix(ink.bgTintRGB, pageRGB, 0.5)
+        let page = surface.background
+        if !surface.isLight {
+            return LinearGradient(colors: [page, page], startPoint: .top, endPoint: .bottom)
+        }
+        return LinearGradient(
+            stops: [
+                .init(color: ink.bgTint, location: 0.00),
+                .init(color: Color(red: Double(midRGB.r), green: Double(midRGB.g), blue: Double(midRGB.b)),
+                      location: 0.42),
+                .init(color: page, location: 0.78),
+                .init(color: page, location: 1.00)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
     // 🔁 主题切换时重算 ink。以前没有任何入口触发重算（updateAlbumColor 只在 onAppear / 换歌时调），
     // 所以 Cmd+T 切到灰白后拿到的仍然是为黑底算的那套色。现由 MainPlayerView.onChange(of: themeType) 调。
     func applyTheme(_ themeType: String) {

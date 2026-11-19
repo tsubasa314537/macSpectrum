@@ -52,6 +52,11 @@ struct LyricView: View {
                             Color.clear.frame(height: 200)
                         }
                     }
+                    // 🌫️ 上下渐隐：遮罩加在 ScrollView（视口）上，而不是里面的 VStack 上。
+                    // 加在内容上的话渐隐带会跟歌词一起滚走，等于没加；加在视口上它才是钉死的“窗口框”。
+                    .mask(alignment: .center) {
+                        EdgeFadeMask(top: 104, bottom: 78)
+                    }
                     // 🚀 跳行核心：只要唱到下一句，当前行锁定到视口中央。
                     .onChange(of: lyricManager.currentLineId) { _, nextId in
                         if let targetId = nextId {
