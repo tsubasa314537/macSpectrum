@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import AppKit
 
 /// 「正在播放」全屏视图：
 /// 上半部分 = 左侧滚动歌词 + 右上角黑胶唱片式旋转专辑图
@@ -260,7 +261,7 @@ struct NowPlayingView: View {
 /// 3. 居中专辑封面（Circle mask）
 /// 4. 中心小圆孔 + 主题色细描边
 ///
-/// 动效：用 `TimelineView(.animation(paused:))` 基于真实经过时间累加角度——
+/// 动效：用 `TimelineView(.animation(paused:))` 把角度由真实经过时间直接算出（渲染路径不写 state）——
 /// 播放即转、暂停即冻结、恢复即以恢复点为时间基准继续，天然按屏幕刷新率逐帧插值，
 /// 比固定 30Hz 定时器手动步进更顺滑，也不会在续转时跳变。
 private struct RotatingAlbumView: View {
@@ -268,10 +269,13 @@ private struct RotatingAlbumView: View {
     @ObservedObject var player: PlayerManager
     @ObservedObject var palette: PaletteManager
     
-    /// 当前显示角度（基于时间累加）
-    @State private var displayAngle: Double = 0
-    /// 上一帧时间基准，用于算帧间隔
-    @State private var lastTick: Date = Date()
+    /// 角度基准：最后一次“停靠”时的累计角度，与停靠那一刻。
+    /// 只有低频事件（出现/暂停/恢复/唤醒）会写这两个 state，渲染路径里一个都不写——
+    /// 原来每帧在 onChange(of: timeline.date) 里连写 lastTick 和 displayAngle，
+    /// SwiftUI 会报 "onChange(of: Date) action tried to update multiple times per frame"，
+    /// 而且每帧双重失效本身是无谓的主线程开销。
+    @State private var parkedAngle: Double = 0
+    @State private var parkDate: Date = Date()
     /// 秒/圈：黑胶既视感（约 4.3 RPM）
     private let revolutionDuration: Double = 14
     /// 圆盘固有直径（不再靠增大它来撑布局，隐去效果交给外层容器裁剪）
@@ -283,6 +287,11 @@ private struct RotatingAlbumView: View {
     
     var body: some View {
         TimelineView(.animation(paused: !player.isPlaying)) { timeline in
+            // 角度就地算出：暂停时 timeline 不再推进，extra 直接取 0，圆盘停在停靠值上。
+            let extra = player.isPlaying
+                ? max(timeline.date.timeIntervalSince(parkDate), 0)
+                : 0
+            let angle = parkedAngle + extra / revolutionDuration * 360.0
             ZStack {
                 // 黑胶外环：灰白主题下压到 0.85——0.6 的半透黑叠在近白背景上只剩浅灰，
                 // 整张唱片发灰发花（用户形容“像 kingsman 的裤子”）。
@@ -324,21 +333,25 @@ private struct RotatingAlbumView: View {
             .frame(width: discSize, height: discSize)
             // 🚀 静态圆盘一次栅格化为 GPU 纹理（无 ScrollView，安全）。
             .drawingGroup()
-            .rotationEffect(.degrees(displayAngle))
-            // 每个刷新帧按真实经过时间累加角度（仅播放时 timeline 才推进 date）。
-            .onChange(of: timeline.date) { _, newDate in
-                let dt = newDate.timeIntervalSince(lastTick)
-                lastTick = newDate
-                // 夹一个大值防御（系统休眠唤醒导致的巨大 dt），避免角度瞬跳。
-                let clamped = min(max(dt, 0), 0.1)
-                displayAngle += clamped / revolutionDuration * 360.0
-            }
+            .rotationEffect(.degrees(angle))
         }
         .frame(width: discSize, height: discSize)
-        .onAppear { lastTick = Date() }
-        // 恢复播放时把时间基准对齐到当下，避免暂停期间 lastTick 过期导致续转跳变。
+        .onAppear { parkDate = Date() }
+        // 暂停/恢复都把已转过的时间结算进 parkedAngle，再以当下为新基准：
+        // 续转既不跳，也不会把暂停那一段算成旋转。
         .onChange(of: player.isPlaying) { _, playing in
-            if playing { lastTick = Date() }
+            let now = Date()
+            if playing {
+                parkDate = now
+            } else {
+                parkedAngle += max(now.timeIntervalSince(parkDate), 0) / revolutionDuration * 360.0
+                parkDate = now
+            }
+        }
+        // 休眠唤醒：这段时间里 timeline 不推进、音频也是停的，所以只把基准挪到当下、
+        // 不结算角度——等价于原来对巨大 dt 的钳制，封面不会瞬跳。
+        .onReceive(NotificationCenter.default.publisher(for: NSWorkspace.didWakeNotification)) { _ in
+            parkDate = Date()
         }
     }
 }

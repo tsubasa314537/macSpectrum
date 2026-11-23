@@ -100,7 +100,7 @@ struct MacSpectrumApp: App {
                 }
             }) {
                 HStack {
-                    Text(player.themeType == "black" ? "||| 魔幻光柱" : "OOO 动感圈圈")
+                    Text(player.themeType == "black" ? "动感圈圈" : "魔幻光柱")
 //                    Image(systemName: player.themeType == "black" ? "|||" : "OOO")
                 }
             }

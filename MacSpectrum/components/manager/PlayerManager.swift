@@ -80,24 +80,94 @@ class PlayerManager: ObservableObject {
     
     //进度条实时更新用定时器（提高频率到 0.1 秒，歌词滚动更丝滑）
     private var progressTimer: Timer?
+
+    // ⏱️ 进度锚点：currentTime 一律按“距锚点的真实经过时间”重算，绝不再 +0.1 累加。
+    // 老写法有两个坑，第二个才是报上来的那个 bug：
+    // ① `Timer.scheduledTimer` 只把 timer 挂进 `.default` 模式，而点开状态栏图标会让 AppKit
+    //    进入菜单跟踪的模态事件循环，`.default` 里的 timer 一次都不会触发；
+    // ② tick 里做的是 `currentTime += 0.1`——丢一次 tick 就永久少 0.1 秒，而且它自己永远追不回来。
+    //    菜单开 3 秒 ≈ 丢 30 次 ≈ 歌词从此慢 3 秒，正是“点一下状态栏，歌词一下慢好几秒”。
+    // 改成锚点后，丢 tick 不再累积误差：下一次 tick 直接落到正确位置。
+    private var anchorTime: Double = 0
+    private var anchorUptime: Double = 0
+    private var anchorNodeSample: Int64?
+    /// NowPlayingInfo 的发布节流时刻：进度不需要 10Hz 推给系统
+    private var lastInfoPublish: Double = 0
+
+    /// 单调时钟，走 mach_absolute_time，休眠期间不前进，
+    /// 所以合盖睡一觉回来也不会让进度凭空跳一大截。
+    nonisolated private var monotonicNow: Double { ProcessInfo.processInfo.systemUptime }
     
     // play/resume 时启动
     func startProgressTimer() {
         stopProgressTimer() // 容错：先停旧的
         
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            
-            if self.isPlaying {
-                let nextTime = self.currentTime + 0.1
-                
-                // 边界防护：不能让进度条冲出歌的总长度
-                self.currentTime = min(nextTime, self.totalDuration)
-                
-                // 高频向系统及 BoringNotch 同步
-                self.updateNowPlayingInfo()
+        reanchorClock(at: currentTime)
+
+        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard let self = self, self.isPlaying else { return }
+
+            // 边界防护：不能让进度条冲出歌的总长度
+            self.currentTime = self.truePlayhead()
+
+            // 控制中心的进度 1 秒一次就够了。原来每个 tick 都重建 MPMediaItemArtwork
+            // 再整包 XPC 发布，是点状态栏图标那一下“卡”的主要开销来源。
+            let now = self.monotonicNow
+            if now - self.lastInfoPublish >= 1.0 {
+                self.lastInfoPublish = now
+                self.updateNowPlayingPosition()
             }
         }
+        // `.common` 才会把 timer 同时挂进菜单跟踪、拖窗口、滚列表这些非默认模式。
+        // 实测（AppKit 已加载）：在 eventTracking 模式下跑 0.5s，scheduledTimer 触发 0 次，
+        // 显式 .default 也是 0 次，.common 触发 24 次。注意这个差异要 NSApplication 起来
+        // 之后才存在——纯 Foundation 进程里 eventTracking 尚未被注册进 common modes，三者全部不触发。
+        RunLoop.main.add(timer, forMode: .common)
+        progressTimer = timer
+    }
+
+    /// 把“当前位置”钉成新的时间锚点。play / resume / seek 都必须重新锚定。
+    private func reanchorClock(at time: Double) {
+        anchorTime = time
+        anchorUptime = monotonicNow
+        anchorNodeSample = currentNodeSampleTime()
+    }
+
+    /// 音频节点自己的 sampleTime；引擎刚重启、设备刚切换时可能拿不到。
+    private func currentNodeSampleTime() -> Int64? {
+        guard let nodeTime = playerNode.lastRenderTime,
+              let playerTime = playerNode.playerTime(forNodeTime: nodeTime) else { return nil }
+        return playerTime.sampleTime
+    }
+
+    /// 真实播放头。优先信音频节点自己的时间——引擎欠载卡顿时它才会跟着慢下来，
+    /// 比墙钟更贴近耳朵实际听到的位置；节点时间拿不到或明显倒退时退回墙钟。
+    private func truePlayhead() -> Double {
+        let wallElapsed = max(monotonicNow - anchorUptime, 0)
+
+        guard let nodeTime = playerNode.lastRenderTime,
+              let pt = playerNode.playerTime(forNodeTime: nodeTime),
+              pt.sampleRate > 0 else {
+            return min(anchorTime + wallElapsed, totalDuration)
+        }
+
+        guard let anchor = anchorNodeSample else {
+            // 锚点那会儿没取到节点时间（刚 stop/重排程，lastRenderTime 为 nil），就地补锚：
+            // 先把墙钟已经走过的量结算进 anchorTime，再让节点时间与它对齐，
+            // 否则之后每一 tick 都会把这一小段白白少算掉。
+            anchorTime = min(anchorTime + wallElapsed, totalDuration)
+            anchorNodeSample = pt.sampleTime
+            anchorUptime = monotonicNow
+            return anchorTime
+        }
+
+        let audioElapsed = Double(pt.sampleTime - anchor) / pt.sampleRate
+        // 倒退 = 引擎在 seek 或设备切换后重开了，这个差值不可信：重锚，本 tick 用墙钟。
+        guard audioElapsed >= 0 else {
+            reanchorClock(at: currentTime)
+            return min(currentTime, totalDuration)
+        }
+        return min(anchorTime + audioElapsed, totalDuration)
     }
     
     // pause/stop 时停止
@@ -315,11 +385,15 @@ class PlayerManager: ObservableObject {
             }
         }
         
+        // 不管播放还是暂停，seek 之后当前位置就是 time，锚点也必须跟着挪过去，
+        // 否则下一次 tick 会拿旧锚点算出差值把进度拽回 seek 之前的位置。
+        // （原来 `currentTime = time` 只写在 wasPlaying 分支里，暂停时拖进度条画面不动。）
+        self.currentTime = time
+        reanchorClock(at: time)
         if wasPlaying {
             playerNode.play()
-            self.currentTime = time
-            self.updateNowPlayingInfo()
         }
+        self.updateNowPlayingInfo()
     }
     
     private let audioDeviceChangedListener: AudioObjectPropertyListenerProc = { _, _, _, inClientData in
@@ -572,8 +646,25 @@ class PlayerManager: ObservableObject {
         // 不再发会变成0的底层计算属性，而是代理 currentTime
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
         info[MPNowPlayingInfoPropertyPlaybackRate]        = isPlaying ? 1.0 : 0.0
+        nowPlayingCache = info
         MPNowPlayingInfoCenter.default().nowPlayingInfo   = info
     }
+    
+    /// 只刷进度和速率，复用已经建好的字典（不再重建 artwork）。
+    /// 封面那个 closure 每次都要新建 MPMediaItemArtwork，属于换歌级开销，
+    /// 不该被 10Hz 的定时器反复触发，所以整包发布拆成了这条轻量路径。
+    func updateNowPlayingPosition() {
+        guard !nowPlayingCache.isEmpty else {
+            updateNowPlayingInfo()
+            return
+        }
+        nowPlayingCache[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
+        nowPlayingCache[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingCache
+    }
+    
+    /// 元数据的完整快照，供只改进度的发布路径复用。
+    private var nowPlayingCache: [String: Any] = [:]
     
     // 根据当前歌曲查找匹配的专辑图列表
     func findAlbumImages(for song: Song) -> [NSImage] {
