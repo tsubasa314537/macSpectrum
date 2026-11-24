@@ -71,22 +71,24 @@ struct LyricView: View {
                         EdgeFadeMask(top: 104, bottom: 78)
                     }
                     // 🚀 跳行核心：只要唱到下一句，当前行锁定到视口中央。
-                    .onChange(of: lyricManager.currentLineId) { _, nextId in
-                        if let targetId = nextId {
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                                proxy.scrollTo(targetId, anchor: .center)
-                            }
-                        }
+                    .onChange(of: lyricManager.currentLineId) { _, _ in
+                        centerCurrentLine(proxy, animated: true)
+                    }
+                    // 🔁 主题切换必须在这里补一刀：Cmd+T 会让 NowPlayingView.upperArea 换分支，
+                    // 整棵歌词子树（含 ScrollView）被销毁重建，滚动位置从 0 重新开始，
+                    // 而 currentLineId 一个字没变 → 上面那个 onChange 不会触发 → 歌词停在第一句，
+                    // 非要等下一次换行才归位（用户报的就是这个）。
+                    // 离屏探针实测：切分支前后 NSScrollView 是**不同实例**，originY 回 0，
+                    // 而把当前行摆回正中需要 858pt；重建时同步 scrollTo 可以直接落位。
+                    // 顺带也治好了「进页面时 currentLineId 已经就位、没有变化可监听」的同源问题。
+                    .onAppear {
+                        centerCurrentLine(proxy, animated: false)
                     }
                     // ⏱️ 手动偏移即时跟随：每次 timeOffset 变化，先按新偏移重算当前行，再滚动对齐。
                     // 与上面 onChange(of: currentTime) 同款同步调用，是已验证可靠的重算路径。
                     .onChange(of: lyricManager.timeOffset) { _, _ in
                         lyricManager.updateCurrentLine(currentTime: player.currentTime)
-                        if let targetId = lyricManager.currentLineId {
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                                proxy.scrollTo(targetId, anchor: .center)
-                            }
-                        }
+                        centerCurrentLine(proxy, animated: true)
                     }
                 }
             }
@@ -101,6 +103,21 @@ struct LyricView: View {
         // ⏱️ 高频毫秒进度监听（在大排灯的主计时器里轮询触发即可，或者直接绑定进度状态）
         .onChange(of: player.currentTime) { _, newTime in
             lyricManager.updateCurrentLine(currentTime: newTime)
+        }
+    }
+    
+    /// 把当前行摆到视口正中。`animated: false` 用在「视图刚被重建」这种场合——
+    /// 那时从顶部滚过去看起来像是歌词自己掉下来了，而用户要的是它本来就该在那儿。
+    private func centerCurrentLine(_ proxy: ScrollViewProxy, animated: Bool) {
+        guard let targetId = lyricManager.currentLineId else { return }
+        if animated {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                proxy.scrollTo(targetId, anchor: .center)
+            }
+        } else {
+            withAnimation(nil) {
+                proxy.scrollTo(targetId, anchor: .center)
+            }
         }
     }
 }

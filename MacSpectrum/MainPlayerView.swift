@@ -32,6 +32,10 @@ struct MainPlayerView: View {
     /// 系统「减弱动态效果」开着时静止。只读一次，不能每帧去查。
     @State private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     
+    /// 进「正在播放」之前的窗口内容尺寸。只有“原本装不下、我确实改大了”才记下来，
+    /// 退出时原样还回去；本来就够高的话根本不碰用户的窗口。
+    @State private var sizeBeforeNowPlaying: NSSize?
+    
     // 1. 获取当前系统登录用户的 Documents 目录真实路径
     let documentURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     
@@ -220,6 +224,27 @@ struct MainPlayerView: View {
                 window.center()
             }
         }
+        .onChange(of: player.nowPlayingShown) { _, shown in
+            guard !player.isAutopilotMode,
+                  let window = NSApplication.shared.windows.first,
+                  let content = window.contentView else { return }
+            
+            // ⚠️ 这里只负责“不够高就放大”，**不写 window.contentMinSize**：
+            // `.windowResizability(.contentSize)` 会按内容 min 尺寸重算下限，命令式设进去会被盖掉。
+            // 下限的真值在 NowPlayingView.upperArea 的 minHeight 上。
+            if shown {
+                if content.frame.height < NowPlayingView.minWindowHeight {
+                    sizeBeforeNowPlaying = content.frame.size
+                    window.setContentSize(NSSize(width: content.frame.width,
+                                                 height: NowPlayingView.preferredWindowHeight))
+                    window.center()
+                }
+            } else if let before = sizeBeforeNowPlaying {
+                sizeBeforeNowPlaying = nil
+                window.setContentSize(before)
+                window.center()
+            }
+        }
         .onChange(of: player.themeType) { _, newTheme in
             // 🎨 切主题必须重算派生色：以前没有任何入口触发重算，Cmd+T 切到灰白后
             // 拿到的仍然是为纯黑底算的那套高亮色，浅色相直接隐进背景。
@@ -404,6 +429,7 @@ struct MainPlayerView: View {
     }
     
     // MARK: - 播控条（取代原本主视图底部的 SpectrumAnalyser）
+    
     private var controlBar: some View {
         HStack(spacing: 40) {
             Button(action: { player.previousTrack() }) {

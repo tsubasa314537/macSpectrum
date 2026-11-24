@@ -61,8 +61,10 @@ class PlayerManager: ObservableObject {
     private var playToken = 0
     @Published var albumImages: [NSImage] = []
     
-    // 存储总时长，load 文件时赋值
-    private(set) var totalDuration: Double = 0
+    // 存储总时长，load 文件时赋值。
+    // @Published：播控条右侧那个总时间要它。暂停状态下 load 新歌时 currentTime 不会跳，
+    // 没有别的 published 变量能顺带把视图刷起来，不标就是一片 0:00。
+    @Published private(set) var totalDuration: Double = 0
     
     // 专门提供给前台歌词（onChange）和外部状态高频响应的 `@Published` 灵魂变量
     @Published var currentTime: Double = 0
