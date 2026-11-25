@@ -19,8 +19,25 @@ struct PlaybackControlBar: View {
     @ObservedObject var player: PlayerManager
     @ObservedObject var palette: PaletteManager
     
-    var onTogglePlaylist: () -> Void
-    var onExit: () -> Void
+    /// 只有 trailingControl == .playlist 时才用得上，主界面换成开关后不需要传。
+    var onTogglePlaylist: () -> Void = {}
+    /// nil 就不画左上角那个「回主界面」按钮。主视图本来就在主界面，没东西可退。
+    var onExit: (() -> Void)? = nil
+    /// 点封面。主视图拿它跳正在播放页；不传就是普通图片，不可点。
+    var onAlbumTap: (() -> Void)? = nil
+    /// 右组摆什么。正在播放页要歌单胶囊，主视图要 Super Shuffle 开关。
+    var trailingControl: TrailingControl = .playlist
+    /// 顶部那条 1px 分隔线。正在播放页要用（它把光柱和播控条切开），主视图的播控条是独立
+    /// 圆角面板、上方已经有呼吸空间，画一条反而像表格线，所以由调用方决定。
+    var showsTopDivider: Bool = true
+    /// 要不要自己铺底色。主视图在外层给了随专辑变化的圆角面板底，组件再叠一层
+    /// `Color.black.opacity(0.22)` 就会把面板和控制条涂成两种灰，此时传 false。
+    var drawsSurface: Bool = true
+    
+    enum TrailingControl {
+        case playlist
+        case superShuffle
+    }
     
     // 🖱️ 拖拽期间的临时状态：抬手才 seek，过程中只显示预览。
     // seek 内部是 playerNode.stop() + scheduleSegment + play()，逐帧触发会碎成爆音。
@@ -53,9 +70,11 @@ struct PlaybackControlBar: View {
             
             centerColumn
                 .frame(width: geo.size.width, height: Self.height)
-                .background(surface)
+                .background(drawsSurface ? surface : Color.clear)
                 .overlay(alignment: .top) {
-                    Rectangle().fill(hairline).frame(height: 1)
+                    if showsTopDivider {
+                        Rectangle().fill(hairline).frame(height: 1)
+                    }
                 }
                 .overlay(alignment: .leading) {
                     albumMeta
@@ -63,7 +82,7 @@ struct PlaybackControlBar: View {
                         .padding(.leading, groupPadding)
                 }
                 .overlay(alignment: .trailing) {
-                    playlistChip.padding(.trailing, groupPadding)
+                    trailingGroup.padding(.trailing, groupPadding)
                 }
         }
         .frame(height: Self.height)
@@ -190,22 +209,37 @@ struct PlaybackControlBar: View {
     private var albumMeta: some View {
         // 回主界面与封面之间原本只留 10，两个图标看上去粘在一起，拉到 16。
         HStack(spacing: 16) {
-            Button(action: onExit) {
-                Image(systemName: "arrow.down.right.and.arrow.up.left")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(secondaryInk)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
+            if let onExit {
+                Button(action: onExit) {
+                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(secondaryInk)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("回主界面")
             }
-            .buttonStyle(.plain)
-            .help("回主界面")
             
+            // 封面：主视图里它是进正在播放页的唯一入口（大专辑图那一列已经删了）。
+            // 用 Button 包而不是 onTapGesture：前者自带键盘可达性与焦点环，
+            // 一个能点的图标用点击手势做的话，Tab 键是走不到它的。
             albumThumb
+                .modifier(OptionalTap(onTap: onAlbumTap))
                 .frame(width: 34, height: 34)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
             
             titleLine
                 .font(.system(size: 15, weight: .medium, design: .rounded))
+        }
+    }
+    
+    @ViewBuilder
+    private var albumThumb: some View {
+        if let img = player.nowAlbum {
+            Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
+        } else {
+            Image("Albumdefault").resizable().aspectRatio(contentMode: .fill)
         }
     }
     
@@ -239,12 +273,54 @@ struct PlaybackControlBar: View {
     }
     
     @ViewBuilder
-    private var albumThumb: some View {
-        if let img = player.nowAlbum {
-            Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
-        } else {
-            Image("Albumdefault").resizable().aspectRatio(contentMode: .fill)
+    private var trailingGroup: some View {
+        switch trailingControl {
+            case .playlist: playlistChip
+            case .superShuffle: superShuffleSwitch
         }
+    }
+    
+    /// Super Shuffle 开关。走 setSuperShuffle 而不是直接改标志位：
+    /// 打开要停当前歌并随机拉起、关闭要还原旧队列，这些都是副作用，
+    /// 绑定到一个纯 setter 上才能保证开关两边行为对称。
+    private var superShuffleSwitch: some View {
+        Button { player.setSuperShuffle(!player.superShuffle) } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "shuffle")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Super Shuffle")
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                switchGlyph(on: player.superShuffle)
+            }
+            .foregroundColor(player.superShuffle ? ink : secondaryInk)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .overlay(
+                Capsule().stroke(player.superShuffle ? accent.opacity(0.55) : Color.clear, lineWidth: 1)
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("全库随机：打开后所有歌单合并成一个大池子随机播放，歌单与歌曲列表同时锁定")
+    }
+    
+    /// 开关的胶囊本身。⚠️ 不能用 `Toggle().toggleStyle(.switch)`：那是 NSSwitch，
+    /// 轨道与滑块取的是**系统外观**的色，跟 material 同一个坑（黑主题下系统若是 Light
+    /// 就会串出一块浅色轨道）。本项目所有表面色都是显式给的，这里也自己画。
+    private func switchGlyph(on: Bool) -> some View {
+        ZStack(alignment: on ? .trailing : .leading) {
+            Capsule()
+                .fill(on ? accent : trackBackground)
+                .frame(width: 30, height: 16)
+            Circle()
+                .fill(on ? .white : secondaryInk)
+                .frame(width: 12, height: 12)
+                .padding(.horizontal, 2)
+        }
+        .animation(.easeInOut(duration: 0.18), value: on)
+        .accessibilityElement()
+        .accessibilityLabel("Super Shuffle")
+        .accessibilityValue(on ? "开启" : "关闭")
     }
     
     /// Song.title 就是去掉扩展名的文件名（PlaylistLoader 从不读 ID3），
@@ -320,5 +396,22 @@ struct PlaybackControlBar: View {
     
     private var trackBackground: Color {
         isLightSurface ? Color.black.opacity(0.14) : Color.white.opacity(0.20)
+    }
+}
+
+/// 有回调才套 Button，没回调就原样返回。同一个开关在两个页面能共用一套调用点：
+/// 正在播放页不传 onAlbumTap，封面就只是一张图。
+private struct OptionalTap: ViewModifier {
+    var onTap: (() -> Void)?
+    
+    func body(content: Content) -> some View {
+        if let onTap {
+            Button(action: onTap) {
+                content.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            content
+        }
     }
 }

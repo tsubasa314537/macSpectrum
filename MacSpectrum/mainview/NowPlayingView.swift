@@ -55,7 +55,10 @@ struct NowPlayingView: View {
                 player: player,
                 palette: palette,
                 onTogglePlaylist: { showPlaylist.toggle() },
-                onExit: { player.nowPlayingShown = false }
+                onExit: { player.nowPlayingShown = false },
+                // 顶部那条 1px 分隔线也不要了（和主界面一致）。底色仍由组件自己铺，
+                // 这页没有外层圆角面板可以接棒，所以 drawsSurface 保持默认 true。
+                showsTopDivider: false
             )
         }
         // ⚠️ 使用 maxWidth/maxHeight: .infinity + ignoresSafeArea(edges: .top) 让 VStack 填满从窗口顶端到底端的完整区域，
@@ -278,10 +281,16 @@ struct NowPlayingView: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
                         .contentShape(Rectangle())
-                        .onTapGesture { player.play(song: song) }
+                        .onTapGesture {
+                            // 🌀 Super Shuffle 期间这个面板列的是整个库，用户要求它跟着锁定。
+                            // 同样不能靠 .disabled：行是 onTapGesture 实装的，对手势无效。
+                            guard !player.superShuffle else { return }
+                            player.play(song: song)
+                        }
                     }
                 }
                 .padding(.vertical, 6)
+                .opacity(player.superShuffle ? 0.4 : 1)
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -313,25 +322,9 @@ struct NowPlayingView: View {
     }
     
     private func updatePalette() {
-        var image = NSImage(named: "Albumdefault")
-        if !player.albumImages.isEmpty {
-            let random = Int.random(in: 0..<player.albumImages.count)
-            image = player.albumImages[random]
-        }
-        
-        player.nowAlbum = image
-        
-        if let albumImage = image,
-           let avgNSColor = albumImage.averageColor {
-            let extractedColor = Color(avgNSColor)
-            // 🎨 animated: false —— 正在播放页换歌要的是“到新歌就直接变色”，不要 1.8s 渐变。
-            // 颜色渐变只留给 autopilot 极简模式（由 startAutopilotColors 每 5s 随机混色驱动）。
-            palette.updateAlbumColor(
-                extractedColor,
-                player.themeType,
-                animated: false
-            )
-        }
+        // 逐图 + 取均色 + 换主题色这条链已抽进 PaletteManager，主界面也走同一份。
+        // animated: false —— 换歌要的是「到新歌就直接变色」，1.8s 渐变只留给 autopilot 混色。
+        player.nowAlbum = palette.applyAlbumImages(player.albumImages, themeType: player.themeType)
     }
 }
 
@@ -376,7 +369,7 @@ private struct RotatingAlbumView: View {
     /// 封面外缘在 0.66，所以 0.775 仍落在黑胶环带内。
     private let grooveRatios: [CGFloat] = [0.965, 0.915, 0.775]
     /// 密沟槽圈数与明暗线不透明度（14 圈铺满 95pt 环带 ≈ 6.8pt 一圈）
-    private let fineGrooves = 7
+    private let fineGrooves = 4
     private let fineDark = 0.18
     private let fineLight = 0.22
     /// 方向性高光强度 / 边缘内阴影深度 / 外缘亮度系数
