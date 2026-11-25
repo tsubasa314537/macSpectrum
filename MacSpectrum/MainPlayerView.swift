@@ -195,7 +195,13 @@ struct MainPlayerView: View {
                     case 98, 123:  // F7 或 左箭头
                         player.previousTrack()
                         return nil
-                    case 100, 49: // F8 或 空格
+                    case 100: // F8
+                        player.isPlaying ? player.pause() : player.resume()
+                        return nil
+                    case 49: // 空格
+                        // ⌨️ 正在打字时空格必须原样交回系统：五笔/拼音的候选上屏键就是空格。
+                        // local monitor 在这里 return nil 等于把上屏键吞了，字永远打不出来。
+                        if Self.isTextEditing() { return event }
                         player.isPlaying ? player.pause() : player.resume()
                         return nil
                     case 101, 124: // F9 或 右箭头
@@ -225,14 +231,23 @@ struct MainPlayerView: View {
             
             if let window = NSApplication.shared.windows.first {
                 if isAutopilot {
+                    // 极简是条固定 1100×150 的横条。进之前先把当前内容尺寸存下来，
+                    // 退出时原样还回去 —— 以前退出硬写 idealColumnWidth×idealColumnHeight，
+                    // 用户自己拉大过的窗口会被一下打回 1300×600（反馈“切回主界面 size 不对”）。
+                    if sizeBeforeAutopilot == nil, let content = window.contentView {
+                        sizeBeforeAutopilot = content.frame.size
+                    }
                     window.setContentSize(NSSize(width: 1100, height: 150))
                     window.isOpaque = true
                     window.hasShadow = false
                     window.level = .floating
                     window.isMovableByWindowBackground = true
                 } else {
-                    window.setContentSize(NSSize(width: Self.idealColumnWidth,
-                                                 height: Self.idealColumnHeight))
+                    // 没记到（启动就在极简里）才回到 ideal。
+                    let back = sizeBeforeAutopilot ?? NSSize(width: Self.idealColumnWidth,
+                                                             height: Self.idealColumnHeight)
+                    sizeBeforeAutopilot = nil
+                    window.setContentSize(back)
                     window.isOpaque = true
                     window.hasShadow = true
                     window.level = .normal
@@ -329,6 +344,17 @@ struct MainPlayerView: View {
     /// 启动时先到黑这件事由 `PlayerManager.themeType` 的默认值保证，不靠这里压。
     private func enterNowPlaying() {
         player.nowPlayingShown = true
+    }
+    
+    /// 焦点是否落在文本输入上。
+    ///
+    /// SwiftUI 的 TextField 在 macOS 背后是 NSTextField，而真正接键盘的是它的
+    /// **字段编辑器**（窗口共享的一个 NSTextView），所以 firstResponder 两种形态都要算：
+    /// 编辑中是 NSTextView，刚点进去还没编辑是 NSTextField。输入法组词中的空格、回车
+    /// 全部由这条链路处理，这里只负责判断“现在是不是在打字”。
+    private static func isTextEditing() -> Bool {
+        guard let responder = NSApplication.shared.keyWindow?.firstResponder else { return false }
+        return responder is NSTextView || responder is NSTextField
     }
     
     // MARK: - 窗口外框与专辑色
@@ -747,6 +773,10 @@ struct MainPlayerView: View {
     /// 进「正在播放」之前的窗口内容尺寸。只有“原本装不下、我确实改大了”才记下来，
     /// 退出时原样还回去；本来就够高的话根本不碰用户的窗口。
     @State private var sizeBeforeNowPlaying: NSSize?
+    
+    /// 进「极简模式」之前的窗口内容尺寸。极简必定改尺寸（拉到 1100×150），所以退出时
+    /// 必须还原成进来之前的那个值，而不是写死 ideal。
+    @State private var sizeBeforeAutopilot: NSSize?
 }
 
 // MARK: - 播放行的小光柱

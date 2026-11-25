@@ -168,12 +168,17 @@ enum ThemeColorEngine {
         return lo
     }
 
-    /// 互补色淡 tint 的**彩度预算**：亮度钉在 1.0，从纯白往下加彩度，直到相对亮度
-    /// 掉到当前页面底色为止。取这个上限，tint 就与页面**等亮度**，引擎为 2.0:1 / 3.6:1
-    /// 解出来的 core / accent 全部继续成立，不需要重算任何一个颜色。
+    /// 互补色淡 tint 的**彩度**。
     ///
-    /// 副作用是预算随色相浮动很大（青 0.227 vs 蓝 0.066）——这不是缺陷，是“淡蓝本身
-    /// 就比淡青暗”的物理事实。写死一个饱和度反而会让蓝主题过重、黄主题看不见。
+    /// 以前只有“等亮度预算”一条：亮度钉在 1.0，从纯白往下加彩度，直到相对亮度掉到页面底色为止。
+    /// 好处是绝不动到 core / accent 已解好的对比度，代价是预算随色相剧烈波动 —— 实测浅底上
+    /// 青主题能到 0.227，蓝却只有 0.055；而黄/金主题的互补色恰好是蓝，tint 解出来 #F0F4FF，
+    /// 彩度 0.055 肉眼就是纯白 —— 用户反馈的“金黄主题反差色看不太出来”就是这一层。
+    /// 原注释把它当成“淡蓝本身就比淡青暗”的物理事实、写着不是缺陷，但用户不看物理，只看有没有颜色。
+    ///
+    /// 现在两条取大：等亮度预算本身就够浓的色相一切照旧（不降级）；不够的往上抬到
+    /// `tintChromaFloor`，同时用 `tintMaxDark` 兜住最暗下限 —— 抬过头会从“有颜色”刷成“一块灰”，
+    /// 宁可停在闸门上。
     static func tintSat(hue: CGFloat, surface: ThemeSurface) -> CGFloat {
         let floorL = surface.backgroundLuminance
         var lo: CGFloat = 0, hi: CGFloat = 0.60
@@ -181,8 +186,24 @@ enum ThemeColorEngine {
             let mid = (lo + hi) / 2
             if luminance(hue: hue, sat: mid, bri: 1.0) >= floorL { lo = mid } else { hi = mid }
         }
+        let equalLum = lo
+        guard equalLum < tintChromaFloor else { return equalLum }
+
+        // 比页面暗 tintMaxDark 倍就是闸门，再浓不准加。
+        let darkLimit = (floorL + 0.05) / tintMaxDark - 0.05
+        lo = equalLum
+        hi = tintChromaFloor
+        for _ in 0..<20 {
+            let mid = (lo + hi) / 2
+            if luminance(hue: hue, sat: mid, bri: 1.0) >= darkLimit { lo = mid } else { hi = mid }
+        }
         return lo
     }
+
+    /// tint 的可见彩度地板。浅底上实测 0.06 以下就读成白色，0.14 留足余量。
+    static let tintChromaFloor: CGFloat = 0.14
+    /// tint 允许比页面暗多少（WCAG 比值）。再暗上半页就读成“刷了一块灰”而不是“有颜色”。
+    static let tintMaxDark: CGFloat = 1.18
 
     /// 两个 RGB 分量的线性混色，t = 0 取 a。
     static func mix(_ a: (r: CGFloat, g: CGFloat, b: CGFloat),

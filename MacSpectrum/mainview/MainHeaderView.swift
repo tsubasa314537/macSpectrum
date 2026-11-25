@@ -60,6 +60,8 @@ struct MainSearchBar: View {
     static let fieldWidth: CGFloat = 360
     private static let rowHeight: CGFloat = 44
     private static let maxResults = 30
+    /// 空框时显的提示文字。title 与 prompt 共用一个串，免改一处漏一处。
+    private static let searchTitle = "搜索歌曲、艺术家或专辑"
 
     @ObservedObject var player: PlayerManager
     @ObservedObject var palette: PaletteManager
@@ -81,7 +83,15 @@ struct MainSearchBar: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(palette.textSecondary)
-            TextField("搜索歌曲、艺术家或专辑", text: $query)
+            // ⚠️ placeholder 必须走 prompt: 显式给色。不给 prompt 时那层灰字吃的是 NSTextField
+            // 的 placeholderTextColor，只跟着**系统外观**走，app 自己那套黑白主题它不理。本机系统外观
+            // 是 Dark，于是浅底上画出来的是白字：离屏渲染逐像素量过（NSHostingView + cacheDisplay，
+            // ImageRenderer 画不出 NSTextField 不能用），底色亮度 0.957、placeholder 最深也是 0.957，
+            // 对比度正好为零 —— 就是用户说的“一直是灰的、白色主题下看不清”。
+            // 给 prompt 打 foregroundColor 后同一处量到 0.237。macOS 27 之前若某版 SDK 不采信这个样式，
+            // 后果只是退回原来那层浅灰，不会叠字。
+            TextField(Self.searchTitle, text: $query,
+                      prompt: Text(Self.searchTitle).foregroundColor(palette.textPlaceholder))
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, design: .rounded))
                 .foregroundColor(palette.textPrimary)

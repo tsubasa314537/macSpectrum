@@ -53,7 +53,7 @@ struct LyricView: View {
                                 // 🔤 字体交给 LyricFontPolicy：日语歌走明朝体（未唱行 W3 / 当前行 W6），
                                 // 俄语歌走 Georgia，其余仍是原来的苹方 rounded。
                                     .font(LyricFontPolicy.font(script,
-                                                                size: isCurrent ? 30 : 22,
+                                                                size: isCurrent ? 35 : 27,
                                                                 emphasized: isCurrent))
                                 // ✨ 高光联动：唱到的那一行亮起专辑强调色（已按主题反解对比度，灰白底上不会再发虚）；
                                 // 黑主题未唱行：白 + 0.4；灰白主题底色提到近白后，用深灰而不是纯黑，减轻压迫感。

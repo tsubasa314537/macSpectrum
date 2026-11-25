@@ -9,6 +9,16 @@ class AudioManager: ObservableObject {
     private let fftSize   = 2048
     private let bandCount = 56
     private let bassBandCount = 10
+
+    /// 交付给 UI 的段数：mel 一共 bandCount 段，从第 displayBandOffset 段起取这么多根，
+    /// 两端剩下的当边缘杂音丢掉（实际是左 4 右 20，不是老注释说的“两端各 8 个”）。
+    ///
+    /// ⚠️ 这个数同时是 leftMagnitudes 的**初值长度**。以前初值按 bandCount=56 分、
+    /// 裁剪只填 32，待机（还没有任何音频回调）时 SpectrumAnalyser 直接画出 56 根零值柱：
+    /// 槽宽 16pt × 56 × 2 声道 = 1792pt，比 1300 的窗口还宽 492pt。
+    /// 分配与裁剪必须认同一个数，所以两边都引用这里。
+    private let displayBandCount = 32
+    private let displayBandOffset = 4
     private var fftSetup: FFTSetup?
     
     private var playerNode: AVAudioPlayerNode?
@@ -47,7 +57,7 @@ class AudioManager: ObservableObject {
     private let attack:  Float = 1.0
     private let release: Float = 0.2
     
-    // ── 输出：左右各 32 个频段 ────────────────────────────────────
+    // ── 输出：左右各 displayBandCount 个频段 ────────────────────────────────
     @Published var leftMagnitudes:  [Float]
     @Published var rightMagnitudes: [Float]
     
@@ -57,14 +67,14 @@ class AudioManager: ObservableObject {
     init() {
         let log2n = vDSP_Length(log2(Float(fftSize)))
         result   = [Float](repeating: 0, count: bandCount)
-        final   = [Float](repeating: 0, count: bandCount - 24)
+        final   = [Float](repeating: 0, count: displayBandCount)
         energies = [Float](repeating: 0, count: bandCount)
         
-        leftMagnitudes = Array(repeating: 0, count: bandCount)
-        rightMagnitudes = Array(repeating: 0, count: bandCount)
+        leftMagnitudes = Array(repeating: 0, count: displayBandCount)
+        rightMagnitudes = Array(repeating: 0, count: displayBandCount)
         
-        lastLeftRender = Array(repeating: 0, count: bandCount)
-        lastRightRender = Array(repeating: 0, count: bandCount)
+        lastLeftRender = Array(repeating: 0, count: displayBandCount)
+        lastRightRender = Array(repeating: 0, count: displayBandCount)
         
         ringBufferL = Array(repeating: 0, count: fftSize)
         ringBufferR = Array(repeating: 0, count: fftSize)
@@ -345,8 +355,9 @@ class AudioManager: ObservableObject {
         
         result = coupledBands
         
-        // 🎯 【核心裁剪】：抛弃最两端各 8 个边缘杂音柱，把中间极其干净的 32 柱交付给 UI 渲染
-        final[0..<32] = result[4..<36]
+        // 🎯 【核心裁剪】：丢掉两端边缘杂音，只把中间 displayBandCount 段交付 UI 渲染。
+        // 写成常量而不是字面数：上面几个数组的分配长度用的就是同一个值，改一处两边一起动。
+        final[0..<displayBandCount] = result[displayBandOffset..<(displayBandOffset + displayBandCount)]
         
         prevBands = result
         return final

@@ -143,7 +143,7 @@ struct NowPlayingView: View {
     /// 黑主题方图与歌词之间的间距。方图不再钉左边，改成**在左半区居右**（对齐 QQ 黑胶机位）：
     /// 之前 `blackAlbumLeading = 150` 让方图贴死左半区、右边空出一大片，看着就是"太靠左"。
     /// 48 → 96：间距翻倍，1300 宽时方图 x∈[234, 602]，歌词从 698 起拿 570 宽。
-    private let blackAlbumGap: CGFloat = 96
+    private let blackAlbumGap: CGFloat = 48
     /// 黑主题方图额外下沉量。**纯视觉补偿**：实测方图已经严格居中
     /// （上半区 471pt 时上隙 75.5 / 下隙 75.5，逐像素量自用户截图），
     /// 但方图下方到柱尖之间那段空白比上方大得多，看上去就偏上。想调回去改这一个数。
@@ -191,12 +191,12 @@ struct NowPlayingView: View {
                     albumSquare(side: blackAlbumSide)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .padding(.trailing, blackAlbumGap)
-                    lyricBlock(leadingInset: 0)
+                    lyricBlock(leadingInset: 48)
                         .padding(.trailing, 32)
                 }
             } else {
                 HStack(spacing: 0) {
-                    lyricBlock(leadingInset: 40)
+                    lyricBlock(leadingInset: 120)
                     discContainer(height: geo.size.height)
                 }
             }

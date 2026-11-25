@@ -300,6 +300,11 @@ class PaletteManager: ObservableObject {
 
     /// 正文级主色。浅主题用接近黑的深灰而不是纯黑：15pt 大面积正文白底上纯黑太硬。
     var textPrimary: Color { surface.isLight ? Color(white: 0.12) : .white }
+    /// 输入框 placeholder 用色。系统那层 placeholderTextColor 跟着**系统外观**走，app 自己切主题
+    /// 它不跟：系统外观 Dark + 本 app 浅主题时，浅底上画的是白字，实测与底色同为 0.957、零对比，
+    /// 根本读不出字（用户反馈）。所以这里显式给色，不走系统默认。
+    /// 0.18 比正文 0.12 略浅，空框不会看成“已经有字”；想再黑就把它贴到 textPrimary。
+    var textPlaceholder: Color { surface.isLight ? Color(white: 0.18) : Color.white.opacity(0.55) }
     /// 次要色（艺术家、专辑、时长、未选中图标）。
     var textSecondary: Color { surface.isLight ? Color(white: 0.42) : Color.white.opacity(0.55) }
     /// shadow / blur 用色。
@@ -310,8 +315,9 @@ class PaletteManager: ObservableObject {
     /// 灰白主题的页面底渐变：顶部压一层主题色的**互补色**淡 tint，往下衰减，到光柱区回到纯页面色。
     ///
     /// 三个设计约束，缺一不可：
-    /// ① tint 与页面**等亮度**（ThemeColorEngine.tintSat 解出来的），所以 core / accent 现有的
-    ///    2.0:1 / 3.6:1 目标全部继续成立，不需要重算任何一个颜色；
+    /// ① tint 最多只比页面暗 `ThemeColorEngine.tintMaxDark`（1.18:1）。原先要求严格等亮度，
+    ///    结果黄/金主题的互补蓝在等亮度下几乎没有彩度空间，tint 直接解成白色（用户反馈“反差色
+    ///    看不出来”）；改成允许暗一点点后，accent 的 3.6:1 最差还剩 3.0:1，仍在可读线以上；
     /// ② 底部必须回到无色——最下面 16pt 是 wash 反光带，那是主题色的半透明平铺，
     ///    和互补底在全强度下相遇会互相抵消成灰米色；
     /// ③ 用连续梯度而不是硬边——割裂感的真来源是硬边，不是“有色”。
