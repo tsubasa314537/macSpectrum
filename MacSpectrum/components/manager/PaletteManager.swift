@@ -263,6 +263,36 @@ class PaletteManager: ObservableObject {
     /// 底部反光带用色：始终是那层极淡 tint，不随能量变。
     var barWashColor: Color { ink.wash }
 
+    // ── 外侧渐隐柱专用色 ────────────────────────────────
+    // 只被超出 AudioManager.coreBandCount 的那几根调用，原有 32 根走的
+    // barColor / barBellyColor 一行没动。做法是**只改颜色**：RGB 往页面底混 mix，
+    // alpha 同比例乘 (1-mix)，不加任何 blur、不改尺寸、不改 shadow/blur 半径。
+    // 为什么不止混 RGB：正在播放页黑主题的底是「纯黑 + 20% 强调色 wash」（见
+    // MainPlayerView 的 .background 分支），并不等于 surface.background；只混到页面底色
+    // 仍会留一块色差。alpha 一起收到 0 才能保证最外侧那根真的看不见。
+    // 两条都走 ink 的分量缓存，一帧几次乘加，不做 Color → NSColor 反解（每秒 60 帧）。
+
+    /// core 色往页面底混 mix：0 = 与 barColor 完全同值，1 = 彻底消失。
+    func barFadeColor(intensity: Double, mix: CGFloat) -> Color {
+        let t = min(max(mix, 0), 1)
+        let rgb = ThemeColorEngine.mix(ink.coreRGB, surface.backgroundRGB, t)
+        // 不透明度曲线与 barColor 保持一致，再乘 (1-t)。黑主题里 shadow 吃的也是这个色，
+        // 所以它跟着一起淡出，不需要额外处理。
+        let alpha = (surface.isLight ? 0.80 + intensity * 0.20 : 0.45 + intensity * 0.55) * Double(1 - t)
+        return Color(red: Double(rgb.r), green: Double(rgb.g), blue: Double(rgb.b), opacity: alpha)
+    }
+
+    /// 肚子色：与 barBellyColor 同一条 core→wash 能量曲线，末端再往页面底混 mix。
+    func barFadeBellyColor(whiteness: CGFloat, mix: CGFloat) -> Color {
+        let t = min(max(mix, 0), 1)
+        // 黑主题的柱体就是 SmoothPentagon 单色，根本没有“肚子”这一层；给个 faded core 兜底。
+        guard surface.isLight else { return barFadeColor(intensity: 0, mix: t) }
+        let w = CGFloat(pow(min(max(whiteness, 0), 1), whiteCurve))
+        let belly = ThemeColorEngine.mix(ink.coreRGB, ink.washRGB, w)
+        let rgb = ThemeColorEngine.mix(belly, surface.backgroundRGB, t)
+        return Color(red: Double(rgb.r), green: Double(rgb.g), blue: Double(rgb.b), opacity: Double(1 - t))
+    }
+
     // MARK: - 列表文字色
     // 主界面 header、歌单列、歌曲列三处都要用，所以住在 palette 里而不是某个视图里。
     // 不能拿 Color.primary / .secondary：那两个跟着**系统**外观走，app 自己切主题它不管，

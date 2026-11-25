@@ -42,7 +42,10 @@ struct MainPlayerView: View {
     // 在 1300 的窗口里居中，两侧各留 125 空白 —— 和光柱「窗口拉宽就两侧空空的」是同一个病。
     // idealWidth/idealHeight 负责启动时的默认尺寸，min 负责窗口下限（.windowResizability(.contentSize)
     // 只认内容侧的 min，命令式写 contentMinSize 会被盖掉）。
-    static let minColumnWidth: CGFloat = 1000
+    // 1000 → 1300：最小宽度锁到当前默认宽度，只许放大不许缩。目标机型就是 14/16 寸 MBP，
+    // 窄窗口那套排版不值得维护；光柱的柱宽/间距是写死的，靠缩窗口只会让两侧空得更多。
+    // 自动驾驶（极简模式）那条 1100×150 的窗口不走这里，下限在 SpectrumAnalyser 里按 isAutopilot 分叉。
+    static let minColumnWidth: CGFloat = 1300
     static let minColumnHeight: CGFloat = 420
     static let idealColumnWidth: CGFloat = 1300
     static let idealColumnHeight: CGFloat = 600

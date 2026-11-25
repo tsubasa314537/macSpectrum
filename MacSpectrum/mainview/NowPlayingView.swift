@@ -137,25 +137,45 @@ struct NowPlayingView: View {
     
     // MARK: - 上半区（主题分叉）
     
-    /// 黑主题方图边长：固定不随窗口变，320 也是之前动态算法的上限。
-    private let blackAlbumSide: CGFloat = 320
-    /// 黑主题方图左边距。56 时图贴左上角；150 把它放到“左半区约中间”的位置，
-    /// 歌词从 470 起还有 798px 宽，不会被挤。
-    private let blackAlbumLeading: CGFloat = 150
+    /// 黑主题方图边长：固定不随窗口变。320 → 368（+15%，用户要求），
+    /// 上半区最小高 495 装得下：居中 63.5 + 下沉 24 + 368 = 455.5，仍留 39 呼吸。
+    private let blackAlbumSide: CGFloat = 368
+    /// 黑主题方图与歌词之间的间距。方图不再钉左边，改成**在左半区居右**（对齐 QQ 黑胶机位）：
+    /// 之前 `blackAlbumLeading = 150` 让方图贴死左半区、右边空出一大片，看着就是"太靠左"。
+    /// 48 → 96：间距翻倍，1300 宽时方图 x∈[234, 602]，歌词从 698 起拿 570 宽。
+    private let blackAlbumGap: CGFloat = 96
     /// 黑主题方图额外下沉量。**纯视觉补偿**：实测方图已经严格居中
     /// （上半区 471pt 时上隙 75.5 / 下隙 75.5，逐像素量自用户截图），
     /// 但方图下方到柱尖之间那段空白比上方大得多，看上去就偏上。想调回去改这一个数。
     private let blackAlbumDownBias: CGFloat = 24
     
+    /// 白主题黑胶：面积比上一版（640）再大 30% → 直径 ×√1.3 = 730。
+    private let whiteDiscSize: CGFloat = 730
+    /// 黄金比：圆心到上边 ÷ 到右边 = 0.618（用户指定）。上一版 75:230 = 0.33，
+    /// 盘沿右边界只盖到 y=298 而盘下缘在 395 → 右上角那一条有 25% 盘高是白的（用户圈的蓝框）。
+    private let whiteDiscRatio: CGFloat = 0.618
+    /// 圆心位置（相对上半区左上角）。这两个值是联立解出来的，不是拍出来的：
+    /// 面积 +30% 与 0.618 两个约束下，若把圆心钉在旧下缘（dy=35）可见面积反而只剩 37%（牙状），
+    /// dy=128 时可见面积 234k ≈ 现在的 1.29 倍，同时右边界白缝从 25% 压到 13%。
+    private let whiteDiscCenterY: CGFloat = 128
+    private var whiteDiscCenterX: CGFloat { whiteDiscCenterY / whiteDiscRatio }   // 207
+    /// 由圆心反解容器参数：topTrailing 对齐下，盘心 = (W − outset − r, lift + r)。
+    private var whiteDiscOutset: CGFloat { whiteDiscSize / 2 - whiteDiscCenterX }  // 158
+    private var whiteDiscLift: CGFloat { whiteDiscSize / 2 - whiteDiscCenterY }    // 237
+    /// 容器宽：必须 ≥ 可见宽（discSize − outset = 572），否则盘的左弧会被容器左边切掉。
+    /// 600 给到 28pt 余量，歌词块拿 W − 600 = 700（54%）。
+    private let whiteDiscContainerWidth: CGFloat = 600
+    
     /// 上半区最小高：取两个主题里更紧的那个。
-    /// 白主题黑胶外圆拟合出来圆心 y=105 / 半径 290 → **下缘在 395pt**（用左外弧 704 个点
-    /// 最小二乘拟合，两端残差 ±5px）；黑主题方图固定 320。取 400 留余量。
-    static let upperMinHeight: CGFloat = 400
+    /// 白主题黑胶下缘 = centerY 128 + 半径 365 = **493pt**（旧值 395）；黑主题方图固定 368。
+    /// 取 495 留余量 —— 这个值直接决定整窗高度下限（见下方 minWindowHeight），
+    /// 因为 `.windowResizability(.contentSize)` 是从内容的 min 尺寸反推 contentMinSize 的。
+    static let upperMinHeight: CGFloat = 495
     /// 整窗最小高 = 上半区 + 光柱 150 + 播控条 78 + 实测余量 32（标题栏安全区那部分）。
-    /// 580 = 320 + 150 + 78 + 32 已由用户截图反解证实，所以这个 32 是真实存在的。
+    /// 495 + 150 + 78 + 32 = 755。
     static var minWindowHeight: CGFloat { upperMinHeight + 150 + PlaybackControlBar.height + 32 }
-    /// 进页时不够高就放大到这个尺寸：用户指定的参考截图（1100×699）上两个主题都正好。
-    static let preferredWindowHeight: CGFloat = 700
+    /// 进页时不够高就放大到这个尺寸：比下限多 25pt，让盘下缘与光柱之间留一点呼吸。
+    static let preferredWindowHeight: CGFloat = 780
     
     /// 灰白 = 左歌词 + 右上角黑胶唱片；纯黑 = 左方形静止专辑图 + 右歌词。
     ///
@@ -166,14 +186,17 @@ struct NowPlayingView: View {
         GeometryReader { geo in
             if player.themeType == "black" {
                 HStack(spacing: 0) {
+                    // 居右：先让方图吃掉左半区的全部弹性宽度并右对齐，再和歌词之间留 gap。
+                    // offset 不参与布局，所以方图自己的垂直下沉不会挪动歌词。
                     albumSquare(side: blackAlbumSide)
-                        .padding(.leading, blackAlbumLeading)
-                    lyricBlock
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.trailing, blackAlbumGap)
+                    lyricBlock(leadingInset: 0)
                         .padding(.trailing, 32)
                 }
             } else {
                 HStack(spacing: 0) {
-                    lyricBlock
+                    lyricBlock(leadingInset: 40)
                     discContainer(height: geo.size.height)
                 }
             }
@@ -188,26 +211,31 @@ struct NowPlayingView: View {
         .clipped()
     }
     
-    private var lyricBlock: some View {
+    /// 歌词块：两个主题都**靠左渲染**（QQ 音乐就是这样，当前行钉在一条竖轴上，
+    /// 而不是每行按自身宽度居中、换行时整墙左右晃）。
+    /// `leadingInset` 是这块相对自己起点的左内缩——黑主题紧跟在方图之后（间距已经由
+    /// `blackAlbumGap` 给足，填 0），白主题直接贴窗口左边，需要自己让出一点边距。
+    private func lyricBlock(leadingInset: CGFloat) -> some View {
         LyricView(
             lyricManager: lyricManager,
             player: player,
             themeType: $player.themeType,
             palette: palette
         )
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(.leading, leadingInset)
     }
     
-    /// 黑胶容器，460 宽 / offset(130,-180) 与原实现一致，只是把外层 GeometryReader
-    /// 量到的高度直接喂进来，不再自己套一层。
-    /// 圆盘固有 580 大于容器，溢出部分交给 .clipped() —— 它的布局尺寸恒定是 460×height，
-    /// 不会因为 discSize 变大而反过来撑大 HStack。
+    /// 黑胶容器：尺寸全部由上面的四个旋钮给出，不再散着写魔法数。
+    /// 圆盘固有直径大于容器，溢出部分交给 .clipped() —— 它的布局尺寸恒定是
+    /// containerWidth × height，不会因为 discSize 变大而反过来撑大 HStack。
     private func discContainer(height: CGFloat) -> some View {
         RotatingAlbumView(player: player, palette: palette,
-                          parkedAngle: $discParkedAngle, parkDate: $discParkDate)
-            .frame(width: 460, height: height, alignment: .topTrailing)
-            .offset(x: 130, y: -180)
-            .frame(width: 460, height: height)
+                          parkedAngle: $discParkedAngle, parkDate: $discParkDate,
+                          discSize: whiteDiscSize)
+            .frame(width: whiteDiscContainerWidth, height: height, alignment: .topTrailing)
+            .offset(x: whiteDiscOutset, y: -whiteDiscLift)
+            .frame(width: whiteDiscContainerWidth, height: height)
             .clipped()
             .gesture(windowDragGesture)
     }
@@ -360,8 +388,9 @@ private struct RotatingAlbumView: View {
     
     /// 秒/圈：黑胶既视感（约 4.3 RPM）
     private let revolutionDuration: Double = 14
-    /// 圆盘固有直径（不再靠增大它来撑布局，隐去效果交给外层容器裁剪）
-    private let discSize: CGFloat = 580
+    /// 圆盘固有直径（不再靠增大它来撑布局，隐去效果交给外层容器裁剪）。
+    /// 由 NowPlayingView 的 `whiteDiscSize` 传入，与容器宽/越界量放在一处对算。
+    var discSize: CGFloat = 640
     /// 封面 label 占盘直径的比例
     private let labelRatio: CGFloat = 0.66
     /// 主沟槽的半径比例：只留 3 条，且**间距不等**——从外圈起第一、二条靠得近（0.05），

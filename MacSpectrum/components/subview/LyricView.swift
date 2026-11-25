@@ -25,7 +25,8 @@ struct LyricView: View {
     var body: some View {
         VStack {
             if lyricManager.lyrics.isEmpty {
-                // 🏖️ 防空洞兑底：没有歌词时，居中干净利落地显示歌名
+                // 🏖️ 防空洞兑底：没有歌词时显示歌名。左对齐跟歌词的竖轴对齐（同一左边距），
+                // 否则有词/无词切歌时文字会左右跳。
                 VStack(spacing: 12) {
                     Spacer()
                     Text(player.currentSong?.title ?? "未知曲目")
@@ -33,12 +34,14 @@ struct LyricView: View {
                         .foregroundColor(themeType == "black" ? .white : .black)
                     Spacer()
                 }
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
             } else {
-                // 🌊 瀑布流歌词墙：居中布局，当前行锁定到视口中央。
+                // 🌊 瀑布流歌词墙：整墙**靠左**（每行钉在同一条竖轴上，当前行锁定到视口垂直中央）。
+                // 以前每行按自身宽度居中，换行时长短不一 → 整墙左右抖，跟 QQ 音乐那种左排版不一样。
                 ScrollViewReader { proxy in
                     ScrollView(.vertical, showsIndicators: false) {
-                        VStack(spacing: 28) {
+                        VStack(alignment: .leading, spacing: 28) {
                             // 🧠 顶部垫高：确保第一句歌词也能滚到窗口的正中间
                             Color.clear.frame(height: 200)
                             
@@ -50,13 +53,13 @@ struct LyricView: View {
                                 // 🔤 字体交给 LyricFontPolicy：日语歌走明朝体（未唱行 W3 / 当前行 W6），
                                 // 俄语歌走 Georgia，其余仍是原来的苹方 rounded。
                                     .font(LyricFontPolicy.font(script,
-                                                                size: isCurrent ? 28 : 20,
+                                                                size: isCurrent ? 30 : 22,
                                                                 emphasized: isCurrent))
                                 // ✨ 高光联动：唱到的那一行亮起专辑强调色（已按主题反解对比度，灰白底上不会再发虚）；
                                 // 黑主题未唱行：白 + 0.4；灰白主题底色提到近白后，用深灰而不是纯黑，减轻压迫感。
                                     .foregroundColor(isCurrent ? palette.bgPalette :
                                         (themeType == "black" ? .white.opacity(0.4) : Color(white: 0.38)))
-                                    .multilineTextAlignment(.center)
+                                    .multilineTextAlignment(.leading)
                                     .padding(.horizontal, 20)
                                     .id(line.id) // 给每一行打上身份证，方便滚动定位
                             }
