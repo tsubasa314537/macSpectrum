@@ -32,6 +32,17 @@ class PlayerManager: ObservableObject {
     // 提到 PlayerManager 是为了让 MenuBarExtra 也能感知，从而在 NowPlaying 页下禁用与路由冲突的菜单项。
     @Published var nowPlayingShown: Bool = false
     
+    // 🌀 Super Shuffle（全库随机）。状态必须住在这一层：主界面两块列表、播控条开关、
+    // 正在播放页的歌单面板、搜索框四处都要读它置灰，放任何视图里都活不过另一处。
+    @Published var superShuffle: Bool = false
+    /// 所有歌单合并后的大数组，由 MainPlayerView 加载完磁盘后灌进来。
+    /// ⚠️ 必须 @Published：onAppear 跑在第一轮 body 之后，不发布的话 header 拿到的永远是
+    /// 启动那一刻的空数组，搜索框看起来正常但一条也搜不到。
+    @Published var allSongs: [Song] = []
+    /// 进 Super Shuffle 之前的队列，关闭时原样还回去。
+    private var queueBeforeSuperShuffle: [Song] = []
+    private var nameBeforeSuperShuffle: String = ""
+    
     //MARK: 播放引擎相关
     private var shuffledOrder: [Int] = []
     private var shufflePointer: Int = 0
@@ -59,6 +70,8 @@ class PlayerManager: ObservableObject {
     @Published var currentPlaylistName: String = ""
     
     private var playToken = 0
+    /// 引擎里到底排过音频没有。resume() 靠它分辨「从暂停恢复」和「压根还没播过」。
+    private(set) var hasScheduledFile = false
     @Published var albumImages: [NSImage] = []
     
     // 存储总时长，load 文件时赋值。
@@ -387,6 +400,8 @@ class PlayerManager: ObservableObject {
             }
         }
         
+        // 段落已经重新排进引擎，后面的 ▶ 走正常的从暂停恢复。
+        hasScheduledFile = true
         // 不管播放还是暂停，seek 之后当前位置就是 time，锚点也必须跟着挪过去，
         // 否则下一次 tick 会拿旧锚点算出差值把进度拽回 seek 之前的位置。
         // （原来 `currentTime = time` 只写在 wasPlaying 分支里，暂停时拖进度条画面不动。）
@@ -521,6 +536,41 @@ class PlayerManager: ObservableObject {
         shufflePointer = 0
     }
     
+    // MARK: - Super Shuffle（全库随机）
+    
+    /// 打开：当前歌曲直接停止，从大数组里随机一首马上拉起。
+    /// 调用方负责把主界面两块列表与正在播放页歌单面板置灰（读 player.superShuffle）。
+    func startSuperShuffle() {
+        guard !allSongs.isEmpty else { return }
+        if !superShuffle {
+            queueBeforeSuperShuffle = currentPlaylist
+            nameBeforeSuperShuffle = currentPlaylistName
+        }
+        superShuffle = true
+        currentPlaylist = allSongs
+        currentPlaylistName = "全部歌曲"
+        generateShuffleOrder()
+        // generateShuffleOrder 把指针放在 0，那是「洗牌后的第一首」而不是「随机一首」；
+        // 洗牌本身已经是均匀随机，所以这里直接取随机指针，语义更贴用户那句话。
+        shufflePointer = Int.random(in: 0..<shuffledOrder.count)
+        // play(song:) 内部第一步就是 stop()，不必在这里额外停一次。
+        playCurrent()
+    }
+    
+    /// 关闭：正在播的歌不停（不调 stop），队列还原为打开前的歌单。
+    /// 指针归零，所以这一首播完 nextTrack 从还原后的队列里随机取第一首 —— 一切照旧。
+    func endSuperShuffle() {
+        guard superShuffle else { return }
+        superShuffle = false
+        currentPlaylist = queueBeforeSuperShuffle
+        currentPlaylistName = nameBeforeSuperShuffle
+        generateShuffleOrder()
+    }
+    
+    func setSuperShuffle(_ on: Bool) {
+        on ? startSuperShuffle() : endSuperShuffle()
+    }
+    
     // MARK: - 播放控制
     func nextTrack() {
         guard !shuffledOrder.isEmpty else { return }
@@ -587,6 +637,7 @@ class PlayerManager: ObservableObject {
             playerNode.play()
             currentSong = song
             isPlaying = true
+            hasScheduledFile = true
             albumImages = findAlbumImages(for: song)
             
             // 🏁 启动硬核物理时钟
@@ -595,6 +646,27 @@ class PlayerManager: ObservableObject {
             
         } catch {
             print("Play error: \(error)")
+        }
+    }
+    
+    /// 启动时「装弹但不击发」：当前曲、列表高亮、控制条信息、总时长全部就位，
+    /// 但不排音频、不起引擎。点 ▶ 时由 resume() 的回落分支真正 play 它。
+    /// 以前启动只 loadPlaylist 不选歌，控制条那颗 ▶ 走的是空排程的 playerNode.play()，
+    /// 表现就是「点播放没反应」。
+    func prepare(song: Song) {
+        guard let index = currentPlaylist.firstIndex(where: { $0.id == song.id }) else { return }
+        currentIndex = index
+        // 把 shuffle 指针也对齐到这一首，它播完 nextTrack 才能顺着队列往下走而不是跳回开头。
+        if let pos = shuffledOrder.firstIndex(of: index) { shufflePointer = pos }
+        currentSong = song
+        currentTime = 0
+        isPlaying = false
+        hasScheduledFile = false
+        albumImages = findAlbumImages(for: song)
+        // 控制条右侧那个总时间要总时长。这里只开文件读容器头（实测单个 0.53ms、不解码音频），
+        // 留在主线程没问题。
+        if let file = try? AVAudioFile(forReading: song.url), file.processingFormat.sampleRate > 0 {
+            totalDuration = Double(file.length) / file.processingFormat.sampleRate
         }
     }
     
@@ -612,6 +684,12 @@ class PlayerManager: ObservableObject {
     }
     
     func resume() {
+        // 没排过音频（启动只 prepare 过、或上一次是 stop 而不是 pause）→ 从头播当前这首歌。
+        // 原先这里直接 playerNode.play()：engine.reset() 之后节点里是空的，点 ▶ 一点声音都没有。
+        if !hasScheduledFile {
+            if let song = currentSong { play(song: song) }
+            return
+        }
         playerNode.play()
         isPlaying = true
         
@@ -627,6 +705,7 @@ class PlayerManager: ObservableObject {
         playerNode.stop()
         engine.reset()
         isPlaying = false
+        hasScheduledFile = false
         
         // 彻底清洗归零
         self.currentTime = 0
@@ -668,53 +747,18 @@ class PlayerManager: ObservableObject {
     /// 元数据的完整快照，供只改进度的发布路径复用。
     private var nowPlayingCache: [String: Any] = [:]
     
-    // 根据当前歌曲查找匹配的专辑图列表
+    /// 当前歌的封面整图（控制条那颗 + 正在播放页唱片 + 控制中心 artwork 都吃它）。
+    ///
+    /// 解析规则一律走 AlbumArtStore，不再自己写一套：以前这里按原始文件名做
+    /// `hasPrefix(artist)` + 从 lyric 串反解专辑名，既没 NFC 归一（Céline Dion 那 23 首
+    /// 今天就匹配不上），也和列表那套按下划线切索引的口径互相漂 —— 报上来的
+    /// 「列表空图、一播就有图」就是两边不一致的结果。现在只允许有一份规则。
+    ///
+    /// 返回空数组 = 确实没有专辑图，由 PaletteManager.applyAlbumImages 落到 Albumdefault。
+    /// 顺带省掉了老实现里「匹配失败就把该歌手全部图片读进内存」那一大笔解码。
     func findAlbumImages(for song: Song) -> [NSImage] {
-        let filename = song.title
-        let parts = filename.components(separatedBy: " - ")
-        guard parts.count >= 2 else { return [] }
-        
-        let artist   = parts[0].trimmingCharacters(in: .whitespaces)
-        let songName = parts[1].trimmingCharacters(in: .whitespaces)
-        
-        let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(atPath: albumsURL.path) else { return [] }
-        
-        let artistFiles = files.filter {
-            $0.lowercased().hasPrefix(artist.lowercased()) &&
-            $0.lowercased().hasSuffix(".jpg")
-        }
-        
-        //来自歌词的专辑名
-        let album = song.lyric.components(separatedBy: "-").last?.replacingOccurrences(
-            of: "_qm",
-            with: ""
-        ) ?? ""
-        
-        //artistFiles是当前歌手的所有专辑图片数组
-        //artist是当前歌手
-        //albumName是当前歌曲所在专辑
-        for file in artistFiles {
-            let trimmed = file.dropFirst(artist.count + 1)
-            let albumName = trimmed.replacingOccurrences(of: "_4.jpg", with: "")
-                .replacingOccurrences(of: " ", with: "")
-            //如果能唯一确定，则专辑数组只返回一张
-            if(albumName.lowercased().contains(album)) {
-                if let image = NSImage(contentsOfFile: albumsURL.path + "/" + file) {
-                    return [image]
-                }
-                //如果歌词文件不存在，但是选定的歌曲名中就是专辑名则专辑数组也只返回对应的一张
-            } else if songName.replacingOccurrences(of: " ", with: "")
-                .lowercased().contains(albumName.lowercased()) {
-                if let image = NSImage(contentsOfFile: albumsURL.path + "/" + file) {
-                    return [image]
-                }
-            }
-        }
-        
-        //匹配失败，返回该歌手全部专辑图
-        return artistFiles.compactMap {
-            NSImage(contentsOfFile: albumsURL.path + "/" + $0)
-        }
+        guard let url = AlbumArtStore.resolveURL(for: song, albumsURL: albumsURL),
+              let image = NSImage(contentsOf: url) else { return [] }
+        return [image]
     }
 }

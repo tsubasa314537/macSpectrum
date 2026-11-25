@@ -88,8 +88,10 @@ struct MacSpectrumApp: App {
             
             Divider()
             
-            // 🎚️ 主题切换：与 Cmd+T 完全对齐 —— 仅正在播放页可用，主视图/极简模式下置灰。
-            // （nowPlayingShown 与 isAutopilotMode 互斥，故只判 nowPlayingShown 就等价于 Cmd+T 的条件。）
+            // 🎚️ 主题切换：与 Cmd+T 完全对齐 —— 主视图与正在播放页都可用，仅极简模式下置灰。
+            // 以前锁在 nowPlayingShown 里，因为当时主界面只能黑底；现在两页共用同一套主题。
+            // 文案不再叫「动感圈圈/魔幻光柱」：那两个名字描述的是正在播放页的唱片与光柱，
+            // 主界面用它们会对不上。改按目标状态命名：当前是白就给【酷黑】，反之给【纯白】。
             Button(action: {
                 if player.themeType == "black" {
                     player.themeType = "white"
@@ -100,11 +102,10 @@ struct MacSpectrumApp: App {
                 }
             }) {
                 HStack {
-                    Text(player.themeType == "black" ? "动感圈圈" : "魔幻光柱")
-//                    Image(systemName: player.themeType == "black" ? "|||" : "OOO")
+                    Text(player.themeType == "black" ? "纯白" : "酷黑")
                 }
             }
-            .disabled(!player.nowPlayingShown)
+            .disabled(player.isAutopilotMode)
             
             Divider()
             

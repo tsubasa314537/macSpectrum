@@ -17,9 +17,34 @@ struct Playlist: Identifiable {
 
 struct Song: Identifiable {
     let id = UUID()
+    /// 去掉扩展名的完整文件名，通常是「艺术家 - 歌名」。全项目都拿它当显示与匹配的原始串，别动。
     let title: String
     let url: URL
+    /// 匹配到的歌词文件名（已去空格、转小写、无扩展名）。
+    /// ⚠️ findAlbumImages 靠 components(separatedBy: "-").last 反解专辑名去做配图匹配，
+    ///    所以这个字段的清洗语义必须原样保留；列表要展示的专辑名另存下面的 album。
     let lyric: String
+
+    // 🏷️ 主界面歌曲列表五列需要的派生字段。全部只来自文件名，不读 ID3
+    //（用户明确：metadata 以后再做）。拆不出来一律「未知」。
+    let artist: String
+    let songTitle: String
+    let album: String
+    /// 字节数。stat 一次几微秒，所以在加载阶段就同步填好，不进异步元数据扫描，
+    /// 否则「大小」列会在启动后空一小段。
+    let size: Int64
+
+    init(title: String, url: URL, lyric: String,
+         artist: String = "未知", songTitle: String = "", album: String = "未知",
+         size: Int64 = 0) {
+        self.title = title
+        self.url = url
+        self.lyric = lyric
+        self.artist = artist
+        self.songTitle = songTitle.isEmpty ? title : songTitle
+        self.album = album
+        self.size = size
+    }
 }
 
 // MARK: - 颜色主题定义

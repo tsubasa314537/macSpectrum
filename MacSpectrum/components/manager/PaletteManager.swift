@@ -90,6 +90,20 @@ class PaletteManager: ObservableObject {
         }
     }
     
+    /// 专辑图 → 当前封面 + 主题色。主界面和正在播放页共用这一份，
+    /// 免得两边各写一套、其中一边漏挂 onChange（主界面原先就是这么丢的）。
+    /// 返回挑中的那张图，由调用方写回 player.nowAlbum。
+    @discardableResult
+    func applyAlbumImages(_ images: [NSImage], themeType: String) -> NSImage? {
+        // 多张专辑图时随机取一张：唱片页是「轮换封面」的语义，跟着随机才能和转盘上看到的一致。
+        let image = images.isEmpty ? NSImage(named: "Albumdefault") : images.randomElement()
+        if let image, let average = image.averageColor {
+            // animated: false —— 换歌要的是「到新歌就直接变色」，1.8s 渐变只留给 autopilot 混色。
+            updateAlbumColor(Color(average), themeType, animated: false)
+        }
+        return image
+    }
+
     func updateAlbumColor(_ newColor: Color, _ themeType: String, animated: Bool = true) {
         if isAutopilotActive { return }
         
@@ -249,6 +263,15 @@ class PaletteManager: ObservableObject {
     /// 底部反光带用色：始终是那层极淡 tint，不随能量变。
     var barWashColor: Color { ink.wash }
 
+    // MARK: - 列表文字色
+    // 主界面 header、歌单列、歌曲列三处都要用，所以住在 palette 里而不是某个视图里。
+    // 不能拿 Color.primary / .secondary：那两个跟着**系统**外观走，app 自己切主题它不管，
+    // 黑主题下系统还是浅色时文字就直接隐进背景了。
+
+    /// 正文级主色。浅主题用接近黑的深灰而不是纯黑：15pt 大面积正文白底上纯黑太硬。
+    var textPrimary: Color { surface.isLight ? Color(white: 0.12) : .white }
+    /// 次要色（艺术家、专辑、时长、未选中图标）。
+    var textSecondary: Color { surface.isLight ? Color(white: 0.42) : Color.white.opacity(0.55) }
     /// shadow / blur 用色。
     /// 注：灰白主题下它只给柱内那层能量驱动的 blur 用；外层投影已改成中性黑
     /// （用 glow 色做投影会和 blur 叠成一片黄雾，颜色应该只留在柱体里）。
