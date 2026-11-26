@@ -166,6 +166,29 @@ struct NowPlayingView: View {
     /// 600 给到 28pt 余量，歌词块拿 W − 600 = 700（54%）。
     private let whiteDiscContainerWidth: CGFloat = 600
     
+    // ── 本页的 macSpectrum 字样（只上主题色，不做呼吸）────────────────
+    /// 字号 26。这不是手感数，是两个主题的可用空间取交集算出来的：
+    /// 实测 system semibold 下「macSpectrum」宽×行高 = 24pt→153×28、26pt→166×31、28pt→179×33。
+    ///
+    /// ① 黑主题「专辑图上方」：方图上缘 = U/2 − 184 + 24（那 24 是纯视觉下沉量）。
+    ///    上半区最小高 U=495 时上缘只有 87.5，扣 14 间距 + 32 字样框 → 字样顶到 41.5，
+    ///    再大一码就要碰到窗口上沿（那一块还有透明标题栏）。26pt 在 U=495/520 下分别是 41.5/54。
+    /// ② 白主题「唱片下方」：盘心 (W−207, 128)、半径 365 → 盘下缘钉死在 y=493，
+    ///    而上半区最小高就是 495 —— **盘底正下方只剩 2pt 缝**，填不下任何可读字号，
+    ///    硬叠到盘上也不行（盘是暗的、accent 也是深色，深字压深盘）。所以沿盘左下那段弧的空腔放：
+    ///    字样 x∈[W−576, W−410]，这段弧 x=W−410 处的下缘 = 128 + √(365²−203²) = 431，
+    ///    U=495 时字样上缘 450 → 仍留 19pt。窗口拉高只会更松（弧的位置与 U 无关）。
+    /// 两个约束取交集 → 26pt（主界面那枚大一码是 28）。
+    private let brandFontSize: CGFloat = 26
+    /// 字样占位框高：给 Text 一个确定高度，才能用「下缘距参照物 N pt」这种算法定位。
+    private let brandBoxHeight: CGFloat = 32
+    /// 黑主题：字样下缘到方图上缘的距离。
+    private let brandGap: CGFloat = 14
+    /// 白主题：字样左边距唱片容器的内缩（= 距盘可见区左边界再右边 24）。
+    private let brandLeadingInset: CGFloat = 24
+    /// 白主题：字样下缘距上半区底边（光柱从那开始）。
+    private let brandBottomPad: CGFloat = 14
+    
     /// 上半区最小高：取两个主题里更紧的那个。
     /// 白主题黑胶下缘 = centerY 128 + 半径 365 = **493pt**（旧值 395）；黑主题方图固定 368。
     /// 取 495 留余量 —— 这个值直接决定整窗高度下限（见下方 minWindowHeight），
@@ -184,21 +207,24 @@ struct NowPlayingView: View {
     @ViewBuilder
     private var upperArea: some View {
         GeometryReader { geo in
-            if player.themeType == "black" {
-                HStack(spacing: 0) {
-                    // 居右：先让方图吃掉左半区的全部弹性宽度并右对齐，再和歌词之间留 gap。
-                    // offset 不参与布局，所以方图自己的垂直下沉不会挪动歌词。
-                    albumSquare(side: blackAlbumSide)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                        .padding(.trailing, blackAlbumGap)
-                    lyricBlock(leadingInset: 48)
-                        .padding(.trailing, 32)
+            ZStack(alignment: .topLeading) {
+                if player.themeType == "black" {
+                    HStack(spacing: 0) {
+                        // 居右：先让方图吃掉左半区的全部弹性宽度并右对齐，再和歌词之间留 gap。
+                        // offset 不参与布局，所以方图自己的垂直下沉不会挪动歌词。
+                        albumSquare(side: blackAlbumSide)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .padding(.trailing, blackAlbumGap)
+                        lyricBlock(leadingInset: 48)
+                            .padding(.trailing, 32)
+                    }
+                } else {
+                    HStack(spacing: 0) {
+                        lyricBlock(leadingInset: 120)
+                        discContainer(height: geo.size.height)
+                    }
                 }
-            } else {
-                HStack(spacing: 0) {
-                    lyricBlock(leadingInset: 120)
-                    discContainer(height: geo.size.height)
-                }
+//                brandWordmark(in: geo.size)
             }
         }
         // ⚠️ 窗口的高度下限只能由这条 minHeight 提供。MacSpectrumApp 用的是
@@ -209,6 +235,36 @@ struct NowPlayingView: View {
         // 离屏实测：这里填 0 / 320 / 400 → contentMinSize 高度 260 / 580 / 660，严格线性。
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: Self.upperMinHeight, maxHeight: .infinity)
         .clipped()
+    }
+    
+    /// 本页的 macSpectrum 字样：黑主题贴在方图上方、与方图左边缘对齐；白主题贴在唱片左下那段弧的空腔里。
+    /// 颜色直接取 `palette.bgPalette`（= ink.accent，浅底 3.6:1 / 深底 ≥4.5:1），
+    /// 不像主界面那枚走 TimelineView 呼吸 —— 用户要求这页只保持主题色。
+    /// 定位靠 offset 而不是 padding：这块不参与布局，不会反过来挤方图、唱片与歌词的既定位置。
+    @ViewBuilder
+    private func brandWordmark(in size: CGSize) -> some View {
+        let brand = Text("macSpectrum")
+            .font(.system(size: brandFontSize, weight: .semibold))
+            .foregroundColor(palette.bgPalette)
+            .fixedSize()
+            .frame(height: brandBoxHeight, alignment: .bottom)
+
+        if player.themeType == "black" {
+            // 方图在左半区居右：右缘 = W/2 − gap，左缘再减一个边长。字样与它齐宽左对齐。
+            let left = size.width / 2 - blackAlbumGap - blackAlbumSide
+            let albumTop = size.height / 2 - blackAlbumSide / 2 + blackAlbumDownBias
+            brand
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .offset(x: left, y: albumTop - brandGap - brandBoxHeight)
+                .gesture(windowDragGesture)
+        } else {
+            // 唱片容器是右边固定 600 宽，字样从它的左缘往里缩 24。
+            brand
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .offset(x: size.width - whiteDiscContainerWidth + brandLeadingInset,
+                        y: size.height - brandBottomPad - brandBoxHeight)
+                .gesture(windowDragGesture)
+        }
     }
     
     /// 歌词块：两个主题都**靠左渲染**（QQ 音乐就是这样，当前行钉在一条竖轴上，

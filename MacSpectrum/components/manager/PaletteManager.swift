@@ -344,16 +344,29 @@ class PaletteManager: ObservableObject {
         )
     }
 
-    /// 待机呼吸的字样色：从 accent（= bgPalette）往白色方向插值。
-    /// phase 取 0…1（0 = 最暗，1 = 峰位），amplitude 是最大掺白量。
+    /// 待机呼吸的字样色：从 accent（= bgPalette）往「淡端」插值。
+    /// phase 取 0…1（0 = accent 本身，1 = 峰位最淡），amplitude 是最大淡化量。
     /// 拿缓存分量做三次乘加，不走 Color → NSColor 反解——这个函数每秒会被调 60 次。
+    ///
+    /// ⚠️ 淡端往哪儿混必须分主题，不能一律往纯白：
+    /// 浅主题下 accent 本身已是 3.6:1 的暗彩色，再往**纯白**混到调用方给的 0.60，
+    /// 峰位相对亮度被抬到与页面底只差一点 —— 扫完整个色相空间，最淡点最差只剩 **1.48:1**
+    /// （深色系主题如黄、金更接近 1.5，等于没有），这就是用户反馈的“白色主题下最浅色看不见”。
+    /// 改成往**页面底色**混、幅度按 `lightBreathFade` 收口后，最淡点最差 2.04:1：
+    /// 观感上仍然是“颜色往底里化开再收回来”，但字始终在。
+    /// 深主题维持原样（往纯白、幅度 0.60，峰位最差仍有 10.31:1）——黑底上变白就是变亮，
+    /// 对比度不掉，用户也确认黑色主题这版没问题。
     func wordmarkColor(phase: Double, amplitude: Double) -> Color {
-        let w = min(max(phase, 0), 1) * min(max(amplitude, 0), 1)
         let c = ink.accentRGB
-        return Color(red: Double(c.r + (1 - c.r) * CGFloat(w)),
-                     green: Double(c.g + (1 - c.g) * CGFloat(w)),
-                     blue: Double(c.b + (1 - c.b) * CGFloat(w)))
+        let w = min(max(phase, 0) * min(max(amplitude, 0), 1), 1)
+        let t = surface.isLight ? min(w, lightBreathFade) : w
+        let m = ThemeColorEngine.mix(c, surface.isLight ? surface.backgroundRGB : (r: 1, g: 1, b: 1), t)
+        return Color(red: Double(m.r), green: Double(m.g), blue: Double(m.b))
     }
+
+    /// 浅主题的最大淡化量（往页面底色混的比例）。0.40 是“最淡点仍站得住 2:1”那一档，
+    /// 想呼吸得更开就往上加：0.45 → 1.91:1，0.52 → 1.75:1（再高浅底上就要开始闪没了）。
+    private let lightBreathFade: CGFloat = 0.40
 
     // 🔁 主题切换时重算 ink。以前没有任何入口触发重算（updateAlbumColor 只在 onAppear / 换歌时调），
     // 所以 Cmd+T 切到灰白后拿到的仍然是为黑底算的那套色。现由 MainPlayerView.onChange(of: themeType) 调。

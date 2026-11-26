@@ -388,11 +388,12 @@ struct MainPlayerView: View {
     
     // MARK: - 主体：左列 + 右块 + 控制条
     
-    /// 按 QQ 音乐那张图分三块：
-    /// ① 左列（登录用户 + 歌单）纯黑，与窗口底色同色，看起来就是「浮在主界面的左方」；
-    /// ② 右块（搜索框 + 歌单名 + 歌曲列表）一块圆角面板，底色随专辑；
-    /// ③ 控制条 另一块圆角面板，底色同样随专辑。
-    /// 三块之间靠 panelGap 的缝分开；窗口本身仍然是黑的（见 body 的 .background），标题栏那条也是黑的。
+    /// 按 QQ 音乐那张图分块：
+    /// ① 左列（登录用户 + 歌单）与窗口底色同色，看起来就是「浮在主界面的左方」；
+    /// ② 顶部一行（搜索框 + macSpectrum 字样）**直接画在底色上**，不再装进面板；
+    /// ③ 右块（歌单名 + 歌曲列表）一块圆角面板，底色随专辑；
+    /// ④ 控制条 另一块圆角面板，底色同样随专辑。
+    /// 四块之间靠 panelGap 的缝分开；窗口本身仍然是黑的（见 body 的 .background），标题栏那条也是黑的。
     private var mainColumns: some View {
         HStack(spacing: 0) {
             leftColumn
@@ -421,6 +422,7 @@ struct MainPlayerView: View {
     
     private var rightColumn: some View {
         VStack(spacing: panelGap) {
+            headerRow
             contentPanel
             barPanel
         }
@@ -431,23 +433,30 @@ struct MainPlayerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
+    /// 搜索框 + 字样。这一行已经从右块面板里拿出来，底下就是窗口本色（黑主题纯黑 /
+    /// 灰白主题那层互补色渐变），所以它不再吃 panelPadding：左右直接吃 rightColumn 的
+    /// leading/trailing，与下面两块面板的边线对齐，读起来是「一块header + 两块面板」而不是错位。
+    /// 高度 44 = 胶囊 36 + 上下各 4；字样 28pt 的行高 33 也装得下。
+    /// 预算没被动：以前面板里那行是 52，现在换成 44 + 10 的块间缝，歌曲列表只差 2pt。
+    private var headerRow: some View {
+        HStack(spacing: 12) {
+            MainSearchBar(player: player,
+                          palette: palette,
+                          allSongs: player.allSongs,
+                          onPick: locateAndPlay,
+                          query: $query)
+            Spacer(minLength: 12)
+            SpectrumWordmark(palette: palette)
+        }
+        .frame(height: 44)
+        // ⚠️ 下拉挂在搜索框自己的 overlay 上往下长，而 VStack 里后声明的兄弟会画在先声明兄弟的
+        // 溢出内容之上 —— 不给这一行抬 zIndex，下拉一展开就被面板里的歌单名和列表盖掉半截。
+        // 以前这层盖在同一个面板里的列表上，现在隔了一块面板边界，更容易看漏。
+        .zIndex(1)
+    }
+    
     private var contentPanel: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                MainSearchBar(player: player,
-                              palette: palette,
-                              allSongs: player.allSongs,
-                              onPick: locateAndPlay,
-                              query: $query)
-                Spacer(minLength: 12)
-                SpectrumWordmark(palette: palette)
-            }
-            .padding(.horizontal, panelPadding)
-            .frame(height: 52)
-            // ⚠️ 下拉挂在搜索框自己的 overlay 上往下长，而 VStack 里后声明的兄弟会画在先声明兄弟的
-            // 溢出内容之上 —— 不给这一行抬 zIndex，下拉一展开就被歌单名和列表盖掉半截。
-            .zIndex(1)
-            
             playlistTitle
             songList      // 表头在 songList 里自带着，这里不能再挂一次 songListHeader
         }
@@ -486,7 +495,9 @@ struct MainPlayerView: View {
         palette.surface.isLight ? palette.surface.background : Color.black
     }
     
-    /// ④ 搜索框下方那块空档拿来放歌单名，字号明显大于列表 —— 它是这一块的标题。
+    /// ④ 面板里第一行是歌单名，字号明显大于列表 —— 它是这一块的标题。
+    /// 搜索框那行搬走之后，它成了面板的第一个子视图，顶部内边距从 2 抬到 8：
+    /// 2pt 会让 28pt 的粗标题顶在 12pt 圆角上，看着像没留边。
     private var playlistTitle: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(selectedPlaylist?.name ?? player.currentPlaylistName)
@@ -496,7 +507,7 @@ struct MainPlayerView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, panelPadding)
-        .padding(.top, 2)
+        .padding(.top, 8)
         .padding(.bottom, 16)
     }
     

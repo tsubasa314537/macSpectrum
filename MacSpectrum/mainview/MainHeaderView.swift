@@ -9,8 +9,9 @@ import SwiftUI
 import AppKit
 
 // 主界面顶部原先是一整条三段式 header。按 QQ 音乐那张图重排之后，三块各归各位：
-// 用户身份进了左列（和歌单同宽、同一块黑底），搜索框进了右块面板的第一行，
-// macSpectrum 字样留在右块右上角。所以这里不再是单个 MainHeaderView，而是三个可独立摆放的零件。
+// 用户身份进了左列（和歌单同宽、同一块黑底）；搜索框与 macSpectrum 字样原先在右块面板里的第一行，
+// 现在提到面板**之上**、直接画在窗口底色上（见 MainPlayerView.headerRow），面板只留标题和列表。
+// 所以这里不再是单个 MainHeaderView，而是三个可独立摆放的零件。
 
 // MARK: - 左列顶部：当前登录用户
 
@@ -51,17 +52,21 @@ struct MainUserCell: View {
     }
 }
 
-// MARK: - 右块第一行：搜索
+// MARK: - 顶部（底色上）：搜索
 
 /// 搜索框 + 命中下拉。下拉挂在搜索框自己的 overlay 上往下长，
 /// ⚠️ 父级必须给这一行 `.zIndex(1)`，否则 VStack 里后声明的歌曲列表会盖住它半截。
 struct MainSearchBar: View {
     /// 搜索框与下拉同宽，且都不参与弹性布局 —— 宽度固定，下拉才能用 alignmentGuide 精确贴住。
-    static let fieldWidth: CGFloat = 360
+    /// 360 → 400：这一行提到底色上之后整块都放大了字号，框宽跟着大一档。
+    static let fieldWidth: CGFloat = 400
     private static let rowHeight: CGFloat = 44
     private static let maxResults = 30
     /// 空框时显的提示文字。title 与 prompt 共用一个串，免改一处漏一处。
     private static let searchTitle = "搜索歌曲、艺术家或专辑"
+    /// 字号与胶囊高度。原先 13/32 是挤在面板里的那一档，现在直接放底色上，大一码。
+    private static let fieldFontSize: CGFloat = 14
+    private static let fieldHeight: CGFloat = 36
 
     @ObservedObject var player: PlayerManager
     @ObservedObject var palette: PaletteManager
@@ -79,9 +84,9 @@ struct MainSearchBar: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 9) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundColor(palette.textSecondary)
             // ⚠️ placeholder 必须走 prompt: 显式给色。不给 prompt 时那层灰字吃的是 NSTextField
             // 的 placeholderTextColor，只跟着**系统外观**走，app 自己那套黑白主题它不理。本机系统外观
@@ -93,19 +98,19 @@ struct MainSearchBar: View {
             TextField(Self.searchTitle, text: $query,
                       prompt: Text(Self.searchTitle).foregroundColor(palette.textPlaceholder))
                 .textFieldStyle(.plain)
-                .font(.system(size: 13, design: .rounded))
+                .font(.system(size: Self.fieldFontSize, design: .rounded))
                 .foregroundColor(palette.textPrimary)
             if !query.isEmpty {
                 Button { query = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundColor(palette.textSecondary)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 12)
-        .frame(height: 32)
+        .padding(.horizontal, 14)
+        .frame(height: Self.fieldHeight)
         .background(fieldSurface, in: Capsule())
         .overlay(Capsule().stroke(hairline, lineWidth: 1))
         // Super Shuffle 期间全库随机，歌单与列表都锁死，搜索框是唯一能「跳出这个模式」的口子，
@@ -199,14 +204,20 @@ struct MainSearchBar: View {
     }
 }
 
-// MARK: - 右块右上角：macSpectrum 字样
+// MARK: - 顶部（底色上）：macSpectrum 字样
 
 /// 呼吸字样，并接管原来大专辑图上的拖窗手势。
 struct SpectrumWordmark: View {
     @ObservedObject var palette: PaletteManager
 
+    /// 字号。这一行已经从右块面板里提到底色上，脱离了面板那套 13pt 控件的密度，大一码到 28。
+    /// 实测 system semibold 下 28pt 的「macSpectrum」宽 179pt —— 右块最窄时也有 1011pt，
+    /// 和 400pt 的搜索框之间还剩 432pt，不会被挤到换行。
+    static let fontSize: CGFloat = 28
+
     // 字样呼吸的三个约束（周期用真实时间而不是 repeatForever、只包住这一个 Text、
-    // 幅度 0.60 不摆到纯白）原先在 MainPlayerView，随字样一起搬到这里。
+    // 幅度只作用在「往淡处」的那半程）原先在 MainPlayerView，随字样一起搬到这里。
+    // 淡端往哪儿混由 PaletteManager.wordmarkColor 按主题分叉，浅主题另有上限。
     private let idleBreathPeriod: Double = 6
     private let idleBreathAmplitude: Double = 0.60
     @State private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -217,7 +228,7 @@ struct SpectrumWordmark: View {
             // 余弦而不是三角波：线性往返在两个端点有速度突变，看着像「顿一下」。
             let p = 0.5 - 0.5 * cos(2 * Double.pi * (t / idleBreathPeriod))
             Text("macSpectrum")
-                .font(.system(size: 24, weight: .semibold))
+                .font(.system(size: Self.fontSize, weight: .semibold))
                 .foregroundColor(palette.wordmarkColor(phase: p, amplitude: idleBreathAmplitude))
         }
         .fixedSize()
