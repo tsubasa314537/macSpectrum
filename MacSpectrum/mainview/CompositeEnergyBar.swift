@@ -20,9 +20,9 @@ struct EnergySpindle: Shape {
     /// 0...1 肚子鼓出程度，直接由能量驱动（做成可动画属性，配合下面的 .linear interpolation）
     var bulge: CGFloat
     /// 针腿落在椭圆上的位相角（弧度，0 = 椭圆顶点）：越大针腿越宽、针越粗
-    var phiStart: CGFloat = 0.55
+    var phiStart: CGFloat = 0.65
     /// 椭圆半高占整根柱子的比例：0.38 → 肚子 76%，针尖 24%
-    var bellyHeightRatio: CGFloat = 0.36
+    var bellyHeightRatio: CGFloat = 0.35
     /// 针腿内凹程度：0 是直线（纯三角针），越大越像一根头发。取小值保持“针”的量感。
     var legTuck: CGFloat = 0.35
 
@@ -150,6 +150,6 @@ struct CompositeEnergyBar: View {
         }
         .frame(width: shapeWidth, height: height, alignment: .bottom)
         .frame(width: barWidth, height: height, alignment: .bottom)
-        .animation(.linear(duration: 0.09), value: intensity)
+        .animation(.linear(duration: 0.099), value: intensity)
     }
 }

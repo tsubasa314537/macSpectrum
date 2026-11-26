@@ -17,7 +17,8 @@ class AudioManager: ObservableObject {
     /// 裁剪只填 32，待机（还没有任何音频回调）时 SpectrumAnalyser 直接画出 56 根零值柱：
     /// 槽宽 16pt × 56 × 2 声道 = 1792pt，比 1300 的窗口还宽 492pt。
     /// 分配与裁剪必须认同一个数，所以两边都引用这里。
-    private let displayBandCount = 32
+    private let displayBandCount = 36
+    var coreBandCount: Int
     private let displayBandOffset = 4
     private var fftSetup: FFTSetup?
     
@@ -37,7 +38,7 @@ class AudioManager: ObservableObject {
     
     private var peakL: Float = 1e-6
     private var peakR: Float = 1e-6
-    private let peakDecay: Float = 0.9995
+    private let peakDecay: Float = 0.995
     
     private var currentSampleRate: Float = 44100
     
@@ -66,6 +67,7 @@ class AudioManager: ObservableObject {
     
     init() {
         let log2n = vDSP_Length(log2(Float(fftSize)))
+        coreBandCount = displayBandCount
         result   = [Float](repeating: 0, count: bandCount)
         final   = [Float](repeating: 0, count: displayBandCount)
         energies = [Float](repeating: 0, count: bandCount)
